@@ -283,7 +283,7 @@ function zoneCompte(etat) {
     <div class="carte-entete"><div class="carte-titre">Aperçu du compte</div>
       <div class="carte-actions"><span class="badge mint">${etat.compte.statut}</span></div></div>
     <div class="flex gap-12" style="align-items:flex-start">
-      <img class="avatar-rond avatar-grand" src="/media/photos/profil-${encodeURIComponent(etat.compte.username)}.svg" alt="" onerror="this.style.display='none'"/>
+      <img class="avatar-rond avatar-grand" src="/api/compte/photo" alt="" onerror="this.style.display='none'"/>
       <div style="min-width:0;flex:1">
         <div style="font-weight:800;font-size:15px;letter-spacing:-.02em">${echapper(etat.compte.avatar.nomInstagram || etat.compte.username)}</div>
         <a class="mono tiny" href="#/parametres">@${echapper(etat.compte.username)}</a>

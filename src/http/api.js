@@ -91,6 +91,15 @@ route('PUT', /^\/api\/compte$/, async (req) => {
   const corps = await lireJson(req);
   return { compte: configurerManuellement(corps) };
 });
+route('GET', /^\/api\/compte\/photo$/, (req, res) => {
+  const photo = un(
+    `SELECT chemin_public FROM contenu_drive WHERE type = 'PhotoProfil' ORDER BY date_ajout DESC LIMIT 1`,
+  );
+  if (!photo?.chemin_public) throw new ErreurHttp(404, 'Photo de profil introuvable');
+  res.writeHead(302, { location: `/media/${photo.chemin_public.split('/').map(encodeURIComponent).join('/')}` });
+  res.end();
+  return undefined;
+});
 route('POST', /^\/api\/compte\/reinitialiser-cycle$/, async (req) => {
   const corps = await lireJson(req).catch(() => ({}));
   return { compte: reinitialiserCycle({ conserverHistorique: corps.conserverHistorique !== false }) };

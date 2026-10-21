@@ -65,8 +65,12 @@ export function calculerStatistiquesJour({ cycle, date, compte, visionnageSecond
 
   const vues = pubs.reduce((s, p) => s + p.vues, 0);
   const portee = pubs.reduce((s, p) => s + p.portee, 0);
-  const likes = interactions?.likes ?? 0;
-  const commentaires = interactions?.commentaires ?? 0;
+  // Compteurs agrégés côté publication (tous les likes ne sont pas journalisés
+  // individuellement) : c'est la référence pour la portée et l'engagement.
+  const likes = pubs.reduce((s, p) => s + p.likes, 0);
+  const commentaires = pubs.reduce((s, p) => s + p.commentaires, 0);
+  const likesJournalises = interactions?.likes ?? 0;
+  const commentairesJournalises = interactions?.commentaires ?? 0;
 
   const alea = creerAlea(Date.parse(`${date}T20:00:00Z`) % 2147483647);
   const abonnesGagnes = Math.max(
@@ -81,6 +85,8 @@ export function calculerStatistiquesJour({ cycle, date, compte, visionnageSecond
   );
   const paysAutorises = obtenirParametres().paysAutorises;
   const details = {
+    likesJournalises,
+    commentairesJournalises,
     visionnageSecondes,
     visionnageMin: Math.round(visionnageSecondes / 60),
     objectifVisionnageMin: OBJECTIF.visionnageMinParJour,

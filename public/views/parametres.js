@@ -28,7 +28,7 @@ export default {
       ${carte(
         'Profil du compte Instagram',
         `<div class="flex gap-16 mb-0" style="margin-bottom:14px;flex-wrap:wrap">
-          <img class="avatar-rond avatar-grand" src="/media/photos/profil-${encodeURIComponent(compte.username)}.svg" alt="" onerror="this.style.display='none'"/>
+          <img class="avatar-rond avatar-grand" src="/api/compte/photo" alt="" onerror="this.style.display='none'"/>
           <div style="flex:1;min-width:220px">
             <div class="flex gap-8 wrap">${badge(compte.statut, compte.configurationOk ? 'mint' : 'ambre')}<span class="badge gris">${echapper(compte.mode)}</span><span class="badge violet">${compte.ageMinimum} ans +</span></div>
             <div class="small muet mt-8">Créé le ${dateFr(compte.dateCreation.slice(0, 10))} · cycle ${compte.cycleActuel || 0} · ${nf(statistiques.publications || 0)} publication(s)</div>
