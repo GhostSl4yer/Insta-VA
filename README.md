@@ -8,8 +8,16 @@ Ce dépôt implémente **les deux diagrammes fournis** (diagramme de classes et 
 d’utilisation) sous la forme d’une application web complète : un moteur autonome côté serveur,
 une console de pilotage dans le navigateur, un Drive de contenus, et une base SQLite locale.
 
-**Console** : tableau de bord temps réel, cycle et journées, Drive, publications, cibles,
-interactions, statistiques, rapports, journal, anomalies, architecture et paramètres.
+**Console** — 14 écrans : tableau de bord temps réel, cycle & journées, programme 30 jours,
+Drive, publications, cibles scorées, interactions, abonnements, statistiques, rapports, journal,
+anomalies, architecture et paramètres.
+
+| | |
+|---|---|
+| **Stack** | Node.js ≥ 22.5, `node:sqlite`, HTTP natif — **0 dépendance npm, 0 build** |
+| **Autonomie** | moteur par tick, cycle 30 j relancé automatiquement, rapports quotidiens |
+| **Conformité** | âge ≥ 25 ans, pays autorisés, fenêtre 16 h → 00 h, aucun message privé |
+| **Tests** | `npm test` — 18 tests (`node:test`), domaine + intégration moteur |
 
 ---
 
