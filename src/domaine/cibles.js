@@ -1,4 +1,5 @@
 import { executer, tous, un } from '../db.js';
+import { config } from '../config.js';
 import { uuid } from '../utils/ids.js';
 import { creerAlea, borner, arrondi } from '../utils/alea.js';
 import { PERSONAS, COMPTES_REFERENCE, PRENOMS, NOMS, PREFIXES_PSEUDO, SUFFIXES_PSEUDO } from '../donnees/personas.js';
@@ -170,6 +171,8 @@ export function genererReferences() {
 
 export function assurerCibles() {
   const total = un('SELECT COUNT(*) AS n FROM cible')?.n ?? 0;
+  // Production sans interactions : aucune cible n'est générée.
+  if (!config.interactionsActives) return total;
   if (total < 20) {
     genererReferences();
     genererCibles({ nombre: Math.max(0, 170 - total) });

@@ -4,6 +4,11 @@ import { config } from '../config.js';
 import { routesApi } from './api.js';
 import { ErreurHttp, envoyerJson, envoyerTexte, servirFichier } from '../utils/http.js';
 import { etatPublic } from '../domaine/moteur.js';
+import {
+  authActive, verifierMotDePasse, creerJeton, sessionCourante, cookieSession, cookieSupprime,
+  ipClient, tentativesRestantes, enregistrerEchec, reinitialiserTentatives,
+} from './auth.js';
+import { pageConnexion, pageErreur } from './pages.js';
 
 const clientsSse = new Set();
 let diffusion = null;
@@ -64,7 +69,81 @@ const ENTETES_SECURITE = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'same-origin',
   'x-frame-options': 'SAMEORIGIN',
+  'permissions-policy': 'geolocation=(), microphone=(), camera=()',
 };
+
+/** Routes accessibles sans session. */
+const PUBLIQUES = new Set(['/connexion', '/api/auth/connexion', '/api/auth/session', '/healthz', '/readyz']);
+
+function lireCorps(req, limite = 4096) {
+  return new Promise((resolve, reject) => {
+    let taille = 0;
+    const morceaux = [];
+    req.on('data', (morceau) => {
+      taille += morceau.length;
+      if (taille > limite) {
+        reject(new ErreurHttp(413, 'Requête trop volumineuse'));
+        req.destroy();
+        return;
+      }
+      morceaux.push(morceau);
+    });
+    req.on('end', () => resolve(Buffer.concat(morceaux).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function suiteSure(valeur) {
+  const suite = String(valeur || '/').trim();
+  if (!suite.startsWith('/') || suite.startsWith('//')) return '/';
+  return suite;
+}
+
+async function traiterConnexion(req, res) {
+  const ip = ipClient(req);
+  if (tentativesRestantes(ip) <= 0) {
+    envoyerTexte(res, 429, 'Trop de tentatives. Réessayez dans quelques minutes.', 'text/plain; charset=utf-8');
+    return;
+  }
+  let corps = '';
+  try {
+    corps = await lireCorps(req);
+  } catch {
+    envoyerTexte(res, 413, 'Requête trop volumineuse');
+    return;
+  }
+  const type = String(req.headers['content-type'] || '');
+  let donnees = {};
+  if (type.includes('application/json')) {
+    try {
+      donnees = JSON.parse(corps || '{}');
+    } catch {
+      donnees = {};
+    }
+  } else {
+    donnees = Object.fromEntries(new URLSearchParams(corps));
+  }
+  const suite = suiteSure(donnees.suite);
+  if (!verifierMotDePasse(donnees.motDePasse)) {
+    enregistrerEchec(ip);
+    const reste = tentativesRestantes(ip);
+    if (type.includes('application/json')) {
+      envoyerJson(res, 401, { erreur: 'Mot de passe incorrect', restantes: reste });
+    } else {
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(pageConnexion({ erreur: 'Mot de passe incorrect.', suite, restantes: reste }));
+    }
+    return;
+  }
+  reinitialiserTentatives(ip);
+  res.setHeader('set-cookie', cookieSession(req, creerJeton()));
+  if (type.includes('application/json')) {
+    envoyerJson(res, 200, { ok: true, suite });
+  } else {
+    res.writeHead(303, { location: suite, 'cache-control': 'no-store' });
+    res.end();
+  }
+}
 
 function creerServeur() {
   demarrerDiffusion();
@@ -89,6 +168,59 @@ function creerServeur() {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { allow: 'GET,POST,PUT,DELETE,OPTIONS' });
         res.end();
+        return;
+      }
+
+      if (chemin === '/api/auth/connexion' && req.method === 'POST') {
+        await traiterConnexion(req, res);
+        return;
+      }
+
+      if (chemin === '/api/auth/deconnexion' && req.method === 'POST') {
+        res.setHeader('set-cookie', cookieSupprime(req));
+        envoyerJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (chemin === '/api/auth/session' && req.method === 'GET') {
+        envoyerJson(res, 200, sessionCourante(req));
+        return;
+      }
+
+      if (chemin === '/healthz' || chemin === '/readyz') {
+        let pret = true;
+        try {
+          etatPublic();
+        } catch {
+          pret = false;
+        }
+        envoyerJson(res, pret ? 200 : 503, {
+          statut: pret ? 'ok' : 'indisponible',
+          version: config.version,
+          environnement: config.environnement,
+          heure: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (authActive() && !PUBLIQUES.has(chemin) && !sessionCourante(req).authentifie) {
+        if (chemin.startsWith('/api/')) {
+          envoyerJson(res, 401, { erreur: 'Authentification requise' });
+        } else {
+          res.writeHead(303, { location: `/connexion?suite=${encodeURIComponent(chemin + url.search)}`, 'cache-control': 'no-store' });
+          res.end();
+        }
+        return;
+      }
+
+      if (chemin === '/connexion' && req.method === 'GET') {
+        if (sessionCourante(req).authentifie) {
+          res.writeHead(303, { location: '/' });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(pageConnexion({ suite: suiteSure(url.searchParams.get('suite')) }));
         return;
       }
 
@@ -134,7 +266,12 @@ function creerServeur() {
         return;
       }
       console.error(`[insta-va] ${req.method} ${chemin} —`, erreur);
-      envoyerJson(res, 500, { erreur: 'Erreur interne du serveur', detail: erreur.message });
+      if (chemin.startsWith('/api/')) {
+        envoyerJson(res, 500, { erreur: 'Erreur interne du serveur' });
+      } else {
+        res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(pageErreur({ statut: 500, titre: 'Erreur interne', message: 'La console a rencontré un problème.' }));
+      }
     }
   });
   serveur.on('clientError', (erreur, socket) => {

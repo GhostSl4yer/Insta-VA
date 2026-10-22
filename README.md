@@ -30,6 +30,16 @@ npm start
 # ▶ Interface : http://localhost:3000
 ```
 
+En production :
+
+```bash
+cp .env.production.example .env        # renseigner DOMAINE, mot de passe, secret
+docker compose up -d --build           # HTTPS automatique via Caddy
+```
+
+Guide complet (prérequis Graph, contenus, VPS, sauvegardes, sécurité) :
+[`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+
 Au premier lancement, l’application :
 
 1. crée le compte Instagram de l’avatar (`@maya.rivera.fit`), l’agent responsable et les paramètres d’audience ;
@@ -60,6 +70,17 @@ Copiez `.env.example` vers `.env` pour ajuster :
 | `IG_USER_ID`, `IG_ACCESS_TOKEN` | — | Identifiants Graph (mode `graph`) |
 | `URL_PUBLIQUE` | — | URL HTTPS publique servant les médias (mode `graph`) |
 | `RAPPORT_WEBHOOK_URL` | — | Transmission des rapports au responsable |
+| `APP_ENV` | `developpement` | `production` : aucune donnée de démonstration |
+| `INSTAVA_MOT_DE_PASSE` / `_HASH` | — | Accès à la console (obligatoire en production) |
+| `INSTAVA_SECRET` | — | Signature des sessions |
+| `INSTAVA_INTERACTIONS` | `true` / `false` en prod | Active les lots d’interactions |
+| `INSTAVA_DERRIERE_PROXY` · `INSTAVA_HTTPS` | `false` | Proxy TLS, cookies `Secure` |
+| `DOMAINE` | — | Domaine public (Caddy, HTTPS automatique) |
+
+> **Mode production** : `APP_ENV=production` désactive l’amorçage, la génération de visuels et
+> de cibles, exige un mot de passe et bloque le moteur tant que les données (compte, profil,
+> audience, identifiants Graph, contenus) ne sont pas fournies. Voir
+> [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ---
 
@@ -297,6 +318,42 @@ côté serveur (forme des paramètres, tailles, chemins de fichiers).
 - Le mot de passe éventuellement saisi est chiffré localement et n’est **jamais utilisé** pour
   se connecter : il illustre l’attribut `motDePasse` du diagramme de classes.
 
-## 11. Licence
+## 11. Production
+
+La version de production ne fabrique **rien** : elle attend que le responsable fournisse le
+compte, le profil, l’audience, les identifiants Instagram Graph et les médias. Un écran
+« Mise en service » guide la saisie, bloc par bloc, et le moteur reste à l’arrêt tant que
+l’ensemble n’est pas complet.
+
+| Sujet | Développement | Production |
+|---|---|---|
+| Historique | 6 journées simulées | aucun |
+| Visuels / photo de profil | générés | fournis |
+| Cibles | 170 profils générés | aucune |
+| Interactions | simulées | désactivées |
+| Identifiants | absents | chiffrés AES-256-GCM |
+| Accès | libre | mot de passe + sessions signées |
+
+Deux chemins de déploiement sont fournis, tous deux documentés :
+
+- **Docker + Caddy** (`Dockerfile`, `docker-compose.yml`, `deploy/Caddyfile`) — HTTPS et
+  certificats automatiques, volume persistant, conteneur non privilégié ;
+- **VPS + systemd** (`deploy/insta-va.service`) derrière Nginx ou Caddy.
+
+L’application **ne peut pas** tourner sur un hébergement serverless (Vercel, Lambda) : le moteur
+est une boucle de fond, la base est un fichier SQLite et l’interface consomme un flux SSE
+permanent. Le détail et les alternatives sont dans
+[`docs/PRODUCTION.md`](docs/PRODUCTION.md#6-hébergement-serverless-vercel-netlify-lambda).
+
+Scripts d’exploitation :
+
+```bash
+node scripts/hash-mot-de-passe.js "mot de passe"   # hash scrypt pour .env
+node scripts/sauvegarde.js [destination]           # base + médias + clé, 14 versions
+```
+
+---
+
+## 12. Licence
 
 MIT — voir `LICENSE`.

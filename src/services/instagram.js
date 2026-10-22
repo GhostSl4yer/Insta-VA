@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { journaliser } from '../domaine/journal.js';
+import { identifiantsGraph } from '../domaine/configuration.js';
 
 /**
  * Passerelle Instagram.
@@ -10,13 +11,14 @@ import { journaliser } from '../domaine/journal.js';
 export const modeSimulation = () => config.modeInstagram !== 'graph';
 
 async function appelGraph(chemin, params = {}, methode = 'GET') {
-  if (!config.graph.token || !config.graph.userId) {
-    throw new Error('Mode Graph activé mais IG_ACCESS_TOKEN / IG_USER_ID manquants.');
+  const identifiants = identifiantsGraph();
+  if (!identifiants.token || !identifiants.userId) {
+    throw new Error('Publication impossible : identifiants Instagram Graph manquants.');
   }
   const base = `https://graph.facebook.com/${config.graph.version}`;
   const url = new URL(`${base}${chemin}`);
   const options = { method: methode, headers: { 'content-type': 'application/x-www-form-urlencoded' } };
-  const corps = new URLSearchParams({ ...params, access_token: config.graph.token });
+  const corps = new URLSearchParams({ ...params, access_token: identifiants.token });
   if (methode === 'GET') {
     for (const [cle, valeur] of corps) url.searchParams.set(cle, valeur);
   } else {
@@ -52,8 +54,8 @@ export async function publierMedia({ type, urlMedia, legende, miniatureUrl }) {
   } else {
     champs.image_url = urlMedia;
   }
-  const creation = await appelGraph(`/${config.graph.userId}/media`, champs, 'POST');
-  const statutPublication = await appelGraph(`/${config.graph.userId}/media_publish`, {
+  const creation = await appelGraph(`/${identifiantsGraph().userId}/media`, champs, 'POST');
+  const statutPublication = await appelGraph(`/${identifiantsGraph().userId}/media_publish`, {
     creation_id: creation.id,
   }, 'POST');
   const infos = await appelGraph(`/${statutPublication.id}`, { fields: 'permalink' });
@@ -70,7 +72,7 @@ export async function verifierStatutMedia(mediaId) {
 export async function recupererInsights({ metrique = 'impressions,reach', periode = 'day' } = {}) {
   if (modeSimulation()) return null;
   try {
-    const infos = await appelGraph(`/${config.graph.userId}/insights`, { metric: metrique, period: periode });
+    const infos = await appelGraph(`/${identifiantsGraph().userId}/insights`, { metric: metrique, period: periode });
     return infos.data;
   } catch (erreur) {
     journaliser(`Insights Graph indisponibles : ${erreur.message}`, { niveau: 'alerte', categorie: 'instagram' });

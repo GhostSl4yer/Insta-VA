@@ -36,6 +36,10 @@ const booleen = (valeur, defaut = false) =>
 
 const dossierDonnees = path.resolve(RACINE, process.env.DATA_DIR || 'data');
 
+/** `production` verrouille les données de démonstration : rien n'est inventé. */
+const environnement = (process.env.APP_ENV || 'developpement').toLowerCase();
+const production = environnement === 'production';
+
 export const config = Object.freeze({
   racine: RACINE,
   port: nombre(process.env.PORT, 3000),
@@ -47,9 +51,19 @@ export const config = Object.freeze({
   fichierBase: path.join(dossierDonnees, 'insta-va.sqlite'),
   fichierCle: path.join(dossierDonnees, '.cle'),
   fuseau: process.env.IG_TIMEZONE || 'America/New_York',
-  modeInstagram: (process.env.INSTAGRAM_MODE || 'simulation').toLowerCase(),
-  vitesseDefaut: Math.max(1, nombre(process.env.VITESSE_DEFAUT, 6)),
-  amorcageJours: Math.max(0, nombre(process.env.AMORCAGE_JOURS, 6)),
+  environnement,
+  production,
+  modeInstagram: (process.env.INSTAGRAM_MODE || (production ? 'graph' : 'simulation')).toLowerCase(),
+  vitesseDefaut: Math.max(1, nombre(process.env.VITESSE_DEFAUT, production ? 1 : 6)),
+  // En production, aucun historique n'est fabriqué : les données sont fournies.
+  amorcageJours: production ? 0 : Math.max(0, nombre(process.env.AMORCAGE_JOURS, 6)),
+  interactionsActives: booleen(process.env.INSTAVA_INTERACTIONS, !production),
+  motDePasse: process.env.INSTAVA_MOT_DE_PASSE || '',
+  hashMotDePasse: process.env.INSTAVA_MOT_DE_PASSE_HASH || '',
+  secretSession: process.env.INSTAVA_SECRET || '',
+  sessionHeures: Math.max(1, nombre(process.env.INSTAVA_SESSION_HEURES, 12)),
+  forcerHttps: booleen(process.env.INSTAVA_HTTPS, production),
+  derriereProxy: booleen(process.env.INSTAVA_DERRIERE_PROXY, production),
   pauseInterJourMs: Math.max(0, nombre(process.env.PAUSE_INTERJOUR_MS, 2200)),
   dureeCycleJours: 30,
   heureDebut: '16:00',
@@ -72,7 +86,8 @@ export const config = Object.freeze({
   }),
   webhookRapport: process.env.RAPPORT_WEBHOOK_URL || '',
   urlPublique: (process.env.URL_PUBLIQUE || '').replace(/\/$/, ''),
-  version: '1.0.0',
+  version: '1.1.0',
+  versionApi: '1.1.0',
 });
 
 export function preparerDossiers() {
