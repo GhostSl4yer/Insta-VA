@@ -1,0 +1,11 @@
+# Données d'exécution (base, drive local, rapports exportés)
+data/
+.env
+*.log
+
+# Divers
+.DS_Store
+Thumbs.db
+node_modules/
+coverage/
+dist/

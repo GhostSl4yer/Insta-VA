@@ -1,0 +1,25 @@
+{
+  "name": "insta-va",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Insta-VA — orchestrateur web 100% autonome pour compte Instagram propulsé par un avatar IA (cycle de 30 jours, sessions 16h–00h, publications, interactions, statistiques et rapports).",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/main.js",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.js",
+    "reset": "node --disable-warning=ExperimentalWarning scripts/reset.js"
+  },
+  "keywords": [
+    "instagram",
+    "automation",
+    "avatar-ia",
+    "orchestrateur",
+    "dashboard",
+    "node"
+  ],
+  "license": "MIT"
+}
