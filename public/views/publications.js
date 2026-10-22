@@ -34,7 +34,7 @@ export default {
 
     const lignes = publications.map(
       (p) => `<tr>
-        <td style="width:54px"><div style="width:40px;height:50px;border-radius:7px;overflow:hidden;background:#0b1020">${
+        <td style="width:54px"><div style="width:40px;height:50px;border-radius:7px;overflow:hidden;background:var(--surface-2)">${
           p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover"/>` : ''
         }</div></td>
         <td style="min-width:240px">

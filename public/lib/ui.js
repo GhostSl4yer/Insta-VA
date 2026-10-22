@@ -104,7 +104,7 @@ export const badgeStatut = (statut) => badge(statut);
 
 /* ─────────────────────────── graphiques ─────────────────────────── */
 
-export function courbe(points, { largeur = 720, hauteur = 220, cle = 'valeur', couleur = '#8b5cf6', couleur2 = '#ec4899', etiquette = 'valeur', format = nf } = {}) {
+export function courbe(points, { largeur = 720, hauteur = 220, cle = 'valeur', couleur = 'currentColor', etiquette = 'valeur', format = nf } = {}) {
   if (!points?.length) return `<div class="vide">Aucune donnée sur la période.</div>`;
   const marges = { haut: 14, droite: 12, bas: 26, gauche: 44 };
   const largeurUtile = largeur - marges.gauche - marges.droite;
@@ -114,7 +114,6 @@ export function courbe(points, { largeur = 720, hauteur = 220, cle = 'valeur', c
   const min = 0;
   const x = (i) => marges.gauche + (points.length === 1 ? largeurUtile / 2 : (i / (points.length - 1)) * largeurUtile);
   const y = (v) => marges.haut + hauteurUtile - ((v - min) / (max - min || 1)) * hauteurUtile;
-  const idGradient = `grad${Math.random().toString(36).slice(2, 8)}`;
   const chemin = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(Number(p[cle]) || 0).toFixed(1)}`).join(' ');
   const aire = `${chemin} L ${x(points.length - 1).toFixed(1)} ${marges.haut + hauteurUtile} L ${x(0).toFixed(1)} ${marges.haut + hauteurUtile} Z`;
   const lignesGrille = 4;
@@ -140,19 +139,10 @@ export function courbe(points, { largeur = 720, hauteur = 220, cle = 'valeur', c
     )
     .join('');
 
-  return `<svg class="graphique" viewBox="0 0 ${largeur} ${hauteur}" preserveAspectRatio="none" role="img" aria-label="Évolution de ${echapper(etiquette)}">
-    <defs>
-      <linearGradient id="${idGradient}" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="${couleur}"/><stop offset="100%" stop-color="${couleur2}"/>
-      </linearGradient>
-      <linearGradient id="aire${idGradient}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${couleur}" stop-opacity="0.35"/>
-        <stop offset="100%" stop-color="${couleur}" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
+  return `<svg class="graphique" viewBox="0 0 ${largeur} ${hauteur}" preserveAspectRatio="none" role="img" aria-label="Évolution de ${echapper(etiquette)}" style="color:${couleur}">
     ${grille}
-    <path class="aire" d="${aire}" fill="url(#aire${idGradient})"/>
-    <path d="${chemin}" fill="none" stroke="url(#${idGradient})" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path class="aire" d="${aire}"/>
+    <path class="courbe" d="${chemin}"/>
     ${pointsDerniers}
     ${etiquettes}
   </svg>`;
@@ -172,19 +162,14 @@ export function barresPays(repartition = []) {
     .join('');
 }
 
-export function anneau(progression, { taille = 128, epaisseur = 10, libelle = '', sous = '', couleur = 'url(#anneauDegrade)' } = {}) {
+export function anneau(progression, { taille = 128, epaisseur = 10, libelle = '', sous = '', couleur = 'currentColor' } = {}) {
   const rayon = (taille - epaisseur) / 2;
   const circonference = 2 * Math.PI * rayon;
   const valeur = Math.max(0, Math.min(100, Number(progression) || 0));
   const offset = circonference * (1 - valeur / 100);
   return `<div class="anneau" style="width:${taille}px;height:${taille}px">
     <svg width="${taille}" height="${taille}">
-      <defs>
-        <linearGradient id="anneauDegrade" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#ec4899"/>
-        </linearGradient>
-      </defs>
-      <circle cx="${taille / 2}" cy="${taille / 2}" r="${rayon}" fill="none" stroke="rgba(148,163,184,0.14)" stroke-width="${epaisseur}"/>
+      <circle cx="${taille / 2}" cy="${taille / 2}" r="${rayon}" fill="none" stroke="var(--surface-3)" stroke-width="${epaisseur}"/>
       <circle cx="${taille / 2}" cy="${taille / 2}" r="${rayon}" fill="none" stroke="${couleur}" stroke-width="${epaisseur}"
         stroke-linecap="round" stroke-dasharray="${circonference.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"
         style="transition: stroke-dashoffset .6s ease"/>
@@ -193,7 +178,7 @@ export function anneau(progression, { taille = 128, epaisseur = 10, libelle = ''
   </div>`;
 }
 
-export function miniBarres(valeurs = [], { couleur = '#8b5cf6', hauteur = 34, largeur = 120 } = {}) {
+export function miniBarres(valeurs = [], { couleur = 'currentColor', hauteur = 34, largeur = 120 } = {}) {
   if (!valeurs.length) return '';
   const max = Math.max(...valeurs, 1);
   const pas = largeur / valeurs.length;
@@ -350,7 +335,7 @@ export async function confirmer(message, { titre = 'Confirmer', danger = false, 
   return new Promise((resolve) => {
     const voile = modale({
       titre: echapper(titre),
-      corps: `<p style="margin:0;color:var(--texte-2)">${echapper(message)}</p>`,
+      corps: `<p style="margin:0;color:var(--encre-2)">${echapper(message)}</p>`,
       pied: `<button class="btn btn-fantome" data-annuler>Annuler</button>
              <button class="btn ${danger ? 'btn-danger' : 'btn-primaire'}" data-confirmer>${echapper(libelle)}</button>`,
       largeur: 520,
@@ -392,7 +377,7 @@ export function squelette(hauteur = 120) {
 export function surligner(texte, recherche) {
   if (!recherche) return echapper(texte);
   const motif = new RegExp(`(${recherche.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
-  return echapper(texte).replace(motif, '<mark style="background:rgba(139,92,246,.35);color:#fff;border-radius:3px">$1</mark>');
+  return echapper(texte).replace(motif, '<mark style="background:var(--surface-3);color:var(--encre);border-radius:3px">$1</mark>');
 }
 
 export const telecharger = (nom, contenu, type = 'text/plain') => {

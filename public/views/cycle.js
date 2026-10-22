@@ -15,7 +15,7 @@ export default {
       .map((s, index) => {
         const vision = Math.round((s.dureeVisionnage || 0) / 60);
         const objectif = index === 0 ? 20 : 15;
-        return `<div class="carte" style="background:${s.statut === 'EnCours' ? 'linear-gradient(150deg, rgba(139,92,246,.18), rgba(10,14,24,.9))' : 'linear-gradient(170deg, rgba(17,24,40,.92), rgba(10,14,24,.94))'};${s.statut === 'EnCours' ? 'border-color:rgba(139,92,246,.4)' : ''}">
+        return `<div class="carte" style="${s.statut === 'EnCours' ? 'border-color:var(--trait-fort)' : ''}">
           <div class="carte-entete">
             <div><div class="carte-titre">Session ${index + 1} · ${s.heureDebut} → ${s.heureFin}</div>
               <div class="carte-sous">${nf(s.dureeVisionnage || 0)} s de visionnage · objectif ${objectif} min</div></div>
@@ -78,7 +78,7 @@ export default {
     <div class="grille g-sidebar mt-16">
       ${carte('Interactions par journée', `<div class="carte-sous" style="margin-bottom:8px">Volume d’interactions sortantes et reçues</div>
         ${courbe(serie, { hauteur: 190, cle: 'valeur', etiquette: 'interactions' })}
-        <div class="legende-graph"><span><i style="background:#8b5cf6"></i>interactions / jour</span></div>`)}
+        <div class="legende-graph"><span><i style="background:var(--encre)"></i>interactions / jour</span></div>`)}
       ${carte(
         'Répartition du jour',
         `<div class="liste">

@@ -56,9 +56,9 @@ export default {
         'Calendrier du cycle',
         `<div style="display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:8px">${grille}</div>
          <div class="flex gap-12 wrap mt-16 small muet">
-           <span class="flex gap-6"><i class="pastille-type" style="background:var(--mint)"></i> terminé</span>
-           <span class="flex gap-6"><i class="pastille-type" style="background:var(--rose)"></i> en cours</span>
-           <span class="flex gap-6"><i class="pastille-type" style="background:#2a3450"></i> à venir</span>
+           <span class="flex gap-6"><i class="pastille-type" style="background:var(--ok)"></i> terminé</span>
+           <span class="flex gap-6"><i class="pastille-type" style="background:var(--encre-2)"></i> en cours</span>
+           <span class="flex gap-6"><i class="pastille-type" style="background:var(--trait-fort)"></i> à venir</span>
          </div>`,
         { sous: `Cycle ${etat.programme.cycleNumero} · progression ${Math.round(etat.programme.progression)} %` },
       )}

@@ -72,9 +72,9 @@ export default {
         `<div class="liste">
           ${flux
             .map(
-              (bloc) => `<div style="padding:6px 0;border-bottom:1px solid rgba(148,163,184,.07)">
+              (bloc) => `<div style="padding:6px 0;border-bottom:1px solid var(--trait)">
                 <div class="flex gap-8"><span class="badge violet">Jour ${bloc.jour}</span></div>
-                <div class="flex-col gap-4 mt-8">${bloc.etapes.map((e) => `<div class="small" style="color:var(--texte-2)">• ${echapper(e)}</div>`).join('')}</div>
+                <div class="flex-col gap-4 mt-8">${bloc.etapes.map((e) => `<div class="small" style="color:var(--encre-2)">• ${echapper(e)}</div>`).join('')}</div>
               </div>`,
             )
             .join('')}

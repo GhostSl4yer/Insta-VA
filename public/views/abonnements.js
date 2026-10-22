@@ -56,7 +56,7 @@ export default {
     <div class="grille g2 mt-16">
       ${carte(
         'Pourquoi suivre les comptes de référence ?',
-        `<div class="flex-col gap-8 small" style="color:var(--texte-2)">
+        `<div class="flex-col gap-8 small" style="color:var(--encre-2)">
           <p style="margin:0">Le diagramme impose de suivre les comptes de référence <strong>et leurs abonnés</strong> : c’est le levier principal de découverte pour un compte qui démarre.</p>
           <div class="flex gap-8"><span class="badge mint">1</span><span>Le bot identifie les comptes de référence de la niche (fitness, nutrition, running, bien-être, IA).</span></div>
           <div class="flex gap-8"><span class="badge mint">2</span><span>Il suit le compte de référence et les profils qualifiés qui interagissent avec lui.</span></div>

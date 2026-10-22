@@ -22,7 +22,7 @@ export default {
     const liste = rapports.length
       ? `<div class="liste">${rapports
           .map(
-            (r) => `<div class="ligne-liste" style="cursor:pointer;${r.id === selectionId ? 'background:rgba(139,92,246,.12);border-radius:10px;padding-left:8px;padding-right:8px' : ''}" data-action="ouvrir" data-id="${r.id}">
+            (r) => `<div class="ligne-liste" style="cursor:pointer;${r.id === selectionId ? 'background:var(--surface-2);border-radius:6px;padding-left:8px;padding-right:8px' : ''}" data-action="ouvrir" data-id="${r.id}">
               <div class="ligne-principal">
                 <div class="ligne-titre">${echapper(r.type === 'fin_cycle' ? 'Bilan de fin de cycle' : `Rapport ${r.type}`)}</div>
                 <div class="ligne-sous">${dateFr(r.date)} · ${nf(r.statistiques.publications || 0)} publi. · ${nf(r.statistiques.interactions || 0)} interactions</div>

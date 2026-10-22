@@ -63,8 +63,8 @@ export function monogramme(nom = '?') {
   return lettres || '?';
 }
 
-export function pastilleAvatar(nom, taille = 34, fond = 'linear-gradient(135deg,#8b5cf6,#ec4899)') {
-  return `<div style="width:${taille}px;height:${taille}px;border-radius:${Math.round(taille / 3.4)}px;background:${fond};display:grid;place-items:center;font-size:${Math.round(taille / 2.7)}px;font-weight:800;color:#fff;flex:0 0 ${taille}px">${echapper(monogramme(nom))}</div>`;
+export function pastilleAvatar(nom, taille = 34, variante = 'pleine') {
+  return `<div class="pastille-avatar ${variante}" style="width:${taille}px;height:${taille}px;border-radius:${Math.round(taille / 3.4)}px;font-size:${Math.round(taille / 2.7)}px;flex:0 0 ${taille}px">${echapper(monogramme(nom))}</div>`;
 }
 
 export function nombre(n) {

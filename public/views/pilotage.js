@@ -21,10 +21,9 @@ function zoneHero(etat) {
   const p = etat.programme;
   return `<div class="hero">
     <svg class="hero-arcs" viewBox="0 0 900 220" preserveAspectRatio="none" aria-hidden="true">
-      <defs><linearGradient id="h1" x1="0" x2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".5"/><stop offset="1" stop-color="#ec4899" stop-opacity="0"/></linearGradient></defs>
-      <circle cx="800" cy="10" r="190" fill="none" stroke="url(#h1)" stroke-width="1.2"/>
-      <circle cx="800" cy="10" r="140" fill="none" stroke="url(#h1)" stroke-width="1.2"/>
-      <circle cx="800" cy="10" r="90" fill="none" stroke="url(#h1)" stroke-width="1.2"/>
+      <circle cx="806" cy="6" r="196" fill="none" stroke="currentColor" stroke-width="1"/>
+      <circle cx="806" cy="6" r="146" fill="none" stroke="currentColor" stroke-width="1"/>
+      <circle cx="806" cy="6" r="96" fill="none" stroke="currentColor" stroke-width="1"/>
     </svg>
     <div class="hero-grille">
       <div>
@@ -119,7 +118,7 @@ function zoneChronologie(etat) {
       ? `<div class="liste">${prochaines
           .map(
             (t) => `<div class="ligne-liste">
-              <span class="mono tiny" style="color:var(--violet-2);flex:0 0 44px">${t.heure}</span>
+              <span class="mono tiny" style="color:var(--encre);flex:0 0 44px">${t.heure}</span>
               <div class="ligne-principal"><div class="ligne-titre" style="font-weight:500;font-size:12.5px">${echapper(t.libelle)}</div></div>
               <span class="badge gris">${echapper(t.type === 'interactions' ? 'interactions' : t.type)}</span>
             </div>`,
@@ -194,10 +193,10 @@ function zonePublications(etat) {
 function zoneInteractions(etat) {
   const i = etat.journee.interactions;
   const types = [
-    { cle: 'Like', couleur: 'var(--rose)' },
-    { cle: 'Commentaire', couleur: 'var(--violet)' },
-    { cle: 'Visionnage', couleur: 'var(--bleu)' },
-    { cle: 'Suivi', couleur: 'var(--mint)' },
+    { cle: 'Like', couleur: 'var(--encre)' },
+    { cle: 'Commentaire', couleur: 'var(--encre-2)' },
+    { cle: 'Visionnage', couleur: 'var(--muet)' },
+    { cle: 'Suivi', couleur: 'var(--muet-2)' },
   ];
   const max = Math.max(1, ...types.map((t) => i.parType[t.cle] || 0));
   return `<div class="carte">
@@ -274,7 +273,7 @@ function zoneCompte(etat) {
     .filter((p) => p.image)
     .slice(0, 6)
     .map(
-      (p) => `<a href="${p.image}" target="_blank" rel="noopener" style="display:block;aspect-ratio:1;overflow:hidden;background:#0b1020">
+      (p) => `<a href="${p.image}" target="_blank" rel="noopener" style="display:block;aspect-ratio:1;overflow:hidden;background:var(--surface-2)">
         <img src="${p.image}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"/>
       </a>`,
     )
@@ -295,7 +294,7 @@ function zoneCompte(etat) {
       </div>
     </div>
     <div class="small muet mt-12" style="white-space:pre-line;max-height:52px;overflow:hidden">${echapper(etat.compte.bio || '')}</div>
-    <div class="mt-12" style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;border-radius:10px;overflow:hidden;border:1px solid var(--line)">
+    <div class="mt-12" style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;border-radius:10px;overflow:hidden;border:1px solid var(--trait)">
       ${vignettes || '<div class="vide" style="grid-column:1/-1">Aucune publication pour l’instant.</div>'}
     </div>
     <div class="flex gap-8 wrap mt-12">
@@ -308,9 +307,9 @@ function zoneCompte(etat) {
 
 function zoneMission(etat) {
   const p = etat.programme.objectifFinal;
-  return `<div class="carte" style="background:linear-gradient(150deg, rgba(139,92,246,.16), rgba(10,14,24,.95));border-color:rgba(139,92,246,.3)">
+  return `<div class="carte" style="border-color:var(--trait-fort)">
     <div class="carte-entete"><div class="carte-titre">Objectif final</div><span class="badge violet">30 jours</span></div>
-    <p class="small" style="color:var(--texte-2);margin:0 0 12px">
+    <p class="small" style="color:var(--encre-2);margin:0 0 12px">
       Développer une audience qualifiée et engagée sur Instagram, avec une audience ciblée
       (${p.ageMinimum} ans +, ${p.pays.length} zones) à travers un contrefort régulier, pour promouvoir l’avatar IA via un lien externe.
     </p>
@@ -369,7 +368,7 @@ function page(etat) {
           'Cibles âgées de 25 ans minimum',
           'Pays hors zone filtrés avant interaction',
           '12 à 25 % de comptes de référence suivis',
-        ].map((r) => `<div class="flex gap-8 small"><span style="color:var(--mint)">✓</span><span>${r}</span></div>`).join('')}
+        ].map((r) => `<div class="flex gap-8 small"><span style="color:var(--ok)">✓</span><span>${r}</span></div>`).join('')}
       </div>
       <div class="sep"></div>
       <a class="btn btn-fantome" href="#/programme">Voir les 10 règles du système</a>

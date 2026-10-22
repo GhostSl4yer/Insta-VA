@@ -169,7 +169,7 @@ export default {
             </div>
             <div>
               <div class="carte-titre" style="margin-bottom:6px">Motif du score</div>
-              <div class="small" style="background:rgba(4,6,12,.5);border:1px solid var(--line);border-radius:10px;padding:10px">${echapper(cible.motifStatut || '—')}</div>
+              <div class="small" style="background:var(--surface-2);border:1px solid var(--trait);border-radius:6px;padding:10px">${echapper(cible.motifStatut || '—')}</div>
               <div class="carte-titre mt-16" style="margin-bottom:6px">Intérêts détectés</div>
               <div class="flex wrap gap-6">${(cible.interets || []).map((i) => `<span class="badge violet">${echapper(i)}</span>`).join('')}</div>
               <div class="carte-titre mt-16" style="margin-bottom:6px">Filters appliqués</div>
