@@ -53,7 +53,7 @@ const ICONES = {
 };
 
 const icone = (nom, taille = 17) =>
-  `<svg viewBox="0 0 24 24" width="${taille}" height="${taille}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nom] || ICONES.pilotage}</svg>`;
+  `<svg viewBox="0 0 24 24" width="${taille}" height="${taille}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nom] || ICONES.pilotage}</svg>`;
 
 /* ─────────────────────────── navigation ─────────────────────────── */
 
@@ -193,7 +193,7 @@ function rendreTopbar() {
     </button>`;
 
   document.getElementById('resume-moteur').innerHTML = `
-    <div class="entete"><span class="point" style="color:${enMarche ? 'var(--mint)' : 'var(--ambre)'}"></span> Moteur ${enMarche ? 'autonome' : horloge.etat === 'en_pause' ? 'en pause' : 'arrêté'}</div>
+    <div class="entete"><span class="point" style="color:${enMarche ? 'var(--ok)' : 'var(--alerte)'}"></span> Moteur ${enMarche ? 'autonome' : horloge.etat === 'en_pause' ? 'en pause' : 'arrêté'}</div>
     <div class="ligne"><span>Journée</span><strong>J${etat.programme.numeroJour} · ${etat.horloge.heure}</strong></div>
     <div class="ligne"><span>Session</span><strong>${horloge.sessionCourante ? `${horloge.sessionCourante.heureDebut}–${horloge.sessionCourante.heureFin}` : '—'}</strong></div>
     <div class="ligne"><span>Publication(s)</span><strong>${etat.journee.publications.filter((p) => p.statut === 'Publiee').length}</strong></div>
@@ -375,7 +375,7 @@ async function ouvrirNotifications() {
         .map(
           (n) => `<div class="ligne-liste">
             <div class="ligne-principal">
-              <div class="ligne-titre">${n.lu ? '' : '<span style="color:var(--rose)">● </span>'}${echapper(n.titre)}</div>
+              <div class="ligne-titre">${n.lu ? '' : '<span style="color:var(--encre)">● </span>'}${echapper(n.titre)}</div>
               <div class="ligne-sous" style="white-space:normal">${echapper(n.message)}</div>
             </div>
             <div class="ligne-droite">${badgeNotification(n.niveau)}<span class="tiny muet">${heureCourt(n.date_notif)}</span></div>

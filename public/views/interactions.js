@@ -38,7 +38,7 @@ export default {
 
     const lignes = interactions.map(
       (i) => `<tr>
-        <td class="serre">${pastilleAvatar(i.entrante ? i.auteur : i.cible, 26, i.entrante ? 'linear-gradient(135deg,#22d3ee,#34d399)' : 'linear-gradient(135deg,#8b5cf6,#ec4899)')}</td>
+        <td class="serre">${pastilleAvatar(i.entrante ? i.auteur : i.cible, 26, i.entrante ? 'douce' : 'pleine')}</td>
         <td style="min-width:140px"><div style="font-weight:600;font-size:12.5px">@${echapper(i.entrante ? i.auteur : i.cible)}</div>
           <div class="tiny muet">${i.entrante ? 'audience' : 'cible'} · ${drapeau(i.pays)} ${echapper(nomPays(i.pays))} ${i.age ? `· ${i.age} ans` : ''}</div></td>
         <td>${badge(i.type, COULEUR_TYPE[i.type] || 'gris')}</td>
@@ -87,7 +87,7 @@ export default {
           `<div class="flex-col gap-8">${['Like', 'Commentaire', 'Visionnage', 'Suivi']
             .map((type) => {
               const valeur = statistiques.parType[type] || 0;
-              const couleur = { Like: 'var(--rose)', Commentaire: 'var(--violet)', Visionnage: 'var(--bleu)', Suivi: 'var(--mint)' }[type];
+              const couleur = { Like: 'var(--encre)', Commentaire: 'var(--encre-2)', Visionnage: 'var(--muet)', Suivi: 'var(--muet-2)' }[type];
               return `<div class="flex gap-8"><span class="small" style="flex:0 0 96px">${type}</span>
                 <div class="progression" style="flex:1;height:8px"><span style="width:${(valeur / maxType) * 100}%;background:${couleur};box-shadow:none"></span></div>
                 <span class="mono tiny" style="flex:0 0 40px;text-align:right">${nf(valeur)}</span></div>`;
@@ -101,7 +101,7 @@ export default {
                 .slice(0, 5)
                 .map(
                   (c) => `<div class="ligne-liste">
-                    ${pastilleAvatar(c.entrante ? c.auteur : c.cible, 28, c.entrante ? 'linear-gradient(135deg,#22d3ee,#34d399)' : 'linear-gradient(135deg,#8b5cf6,#ec4899)')}
+                    ${pastilleAvatar(c.entrante ? c.auteur : c.cible, 28, c.entrante ? 'douce' : 'pleine')}
                     <div class="ligne-principal"><div class="ligne-titre" style="font-size:12px">@${echapper(c.entrante ? c.auteur : c.cible)}</div>
                       <div class="ligne-sous" style="white-space:normal;font-size:11.5px">${echapper(c.contenu)}</div></div>
                     <div class="ligne-droite"><span class="tiny muet">${heureFr(c.dateHeure)}</span></div>

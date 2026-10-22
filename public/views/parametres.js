@@ -55,7 +55,7 @@ export default {
           `<div class="flex-col gap-4">
             ${PAYS.map(
               (p) => `<label class="flex gap-8 small" style="cursor:pointer;padding:5px 0">
-                <input type="checkbox" class="pays-case" value="${p.cle}" ${parametres.paysAutorises.includes(p.cle) ? 'checked' : ''} style="accent-color:#8b5cf6"/>
+                <input type="checkbox" class="pays-case" value="${p.cle}" ${parametres.paysAutorises.includes(p.cle) ? 'checked' : ''}/>
                 <span>${p.drapeau} ${p.libelle}</span>
               </label>`,
             ).join('')}
@@ -71,7 +71,7 @@ export default {
         ${carte(
           'Responsable',
           `<div class="flex gap-12 mb-0" style="margin-bottom:12px">
-            <div style="width:42px;height:42px;border-radius:12px;background:var(--degrade);display:grid;place-items:center;font-weight:800">${echapper((agent.prenom || '')[0] || 'R')}</div>
+            <div style="width:42px;height:42px;border-radius:12px;background:var(--encre);display:grid;place-items:center;font-weight:800">${echapper((agent.prenom || '')[0] || 'R')}</div>
             <div><div style="font-weight:700">${echapper(`${agent.prenom} ${agent.nom}`.trim())}</div><div class="small muet">${echapper(agent.role)}</div></div>
           </div>
           <div class="flex-col gap-8">

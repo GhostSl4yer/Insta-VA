@@ -136,7 +136,7 @@ export default {
             </div>
             <div>
               <div class="carte-titre" style="margin-bottom:8px">Légende & description</div>
-              <div class="small" style="white-space:pre-wrap;max-height:420px;overflow:auto;background:rgba(4,6,12,.5);border:1px solid var(--line);border-radius:10px;padding:12px">${echapper(contenu.description || '')}</div>
+              <div class="small" style="white-space:pre-wrap;max-height:420px;overflow:auto;background:var(--surface-2);border:1px solid var(--trait);border-radius:6px;padding:12px">${echapper(contenu.description || '')}</div>
             </div>
           </div>`,
           pied: `<button class="btn btn-fantome" data-fermer>Fermer</button>${actions}`,

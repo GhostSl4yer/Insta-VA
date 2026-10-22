@@ -248,6 +248,24 @@ Choix techniques :
 - **un seul écrivain** : chaque tick est sérialisé (`enExecution`), les écritures sont transactionnelles ;
 - **source d’énumérations partagée** entre serveur et navigateur (`public/shared/enums.js`).
 
+### Interface
+
+La console suit un parti pris **minimaliste** : papier et encre, filets d’un pixel, aucune ombre
+portée, aucun dégradé, aucune police distante (donc aucun appel réseau externe). La hiérarchie
+repose sur trois éléments seulement : l’espace, la graisse typographique et le contraste.
+
+| Jeton | Rôle |
+|---|---|
+| `--fond` / `--surface` | papier et cartes |
+| `--encre` / `--encre-2` / `--muet` | trois niveaux de texte |
+| `--trait` / `--trait-fort` | filets et bordures |
+| `--ok` · `--alerte` · `--danger` · `--info` | états, en teintes désaturées |
+| `--rayon 10px` · `--rayon-s 6px` | arrondis |
+
+Le thème suit automatiquement `prefers-color-scheme` (clair par défaut, sombre en une passe de
+variables), respecte `prefers-reduced-motion` et reste lisible à 200 % de zoom. Les graphiques
+sont dessinés en `currentColor` : ils héritent du thème sans code dédié.
+
 ---
 
 ## 8. Tests

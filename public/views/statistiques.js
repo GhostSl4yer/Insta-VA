@@ -19,7 +19,7 @@ export default {
 
     const lignesTop = top.map(
       (p) => `<tr>
-        <td style="width:52px"><div style="width:38px;height:48px;border-radius:7px;overflow:hidden;background:#0b1020">${p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover"/>` : ''}</div></td>
+        <td style="width:52px"><div style="width:38px;height:48px;border-radius:7px;overflow:hidden;background:var(--surface-2)">${p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover"/>` : ''}</div></td>
         <td><div style="font-weight:600;font-size:12.5px;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${echapper(p.extrait || '')}</div>
           <div class="tiny muet">${dateFr(p.jour, { court: true })}</div></td>
         <td>${badgeType(p.type)}</td>
@@ -55,10 +55,10 @@ export default {
       ${carte(
         'Portée & likes',
         `${courbe(points, { hauteur: 230, etiquette: 'portée' })}
-         <div class="legende-graph"><span><i style="background:#8b5cf6"></i>portée / jour</span><span><i style="background:#ec4899"></i>likes cumulés : ${nf(agregat.likes)}</span></div>
+         <div class="legende-graph"><span><i style="background:var(--encre)"></i>portée / jour</span><span><i style="background:var(--muet-2)"></i>likes cumulés : ${nf(agregat.likes)}</span></div>
          <div class="sep"></div>
          <div class="carte-sous" style="margin-bottom:6px">Likes par jour</div>
-         ${courbe(pointsLikes, { hauteur: 130, couleur: '#ec4899', couleur2: '#f97316', etiquette: 'likes' })}`,
+         ${courbe(pointsLikes, { hauteur: 130, couleur: 'var(--muet)', etiquette: 'likes' })}`,
         { sous: `${dateFr(agregat.debut, { court: true })} → ${dateFr(agregat.fin, { court: true })} · ${agregat.jours} jour(s)`, actions: `<span class="badge violet">${periode}</span>` },
       )}
       ${carte(
@@ -73,7 +73,7 @@ export default {
         </div>
         <div class="sep"></div>
         <div class="carte-sous" style="margin-bottom:6px">Abonnés gagnés / jour</div>
-        ${courbe(variations, { hauteur: 120, couleur: '#34d399', couleur2: '#22d3ee', etiquette: 'abonnés' })}`,
+        ${courbe(variations, { hauteur: 120, couleur: 'var(--encre)', etiquette: 'abonnés' })}`,
       )}
     </div>
 
