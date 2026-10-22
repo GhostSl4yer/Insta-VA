@@ -54,6 +54,18 @@ import { listerJournal, listerNotifications, marquerNotificationLue, marquerTout
 import { listerAnomalies, resoudreAnomalie, prendreEnCharge } from '../domaine/anomalies.js';
 import { listerVeille, collecterVeille, marquerVeilleTraitee } from '../domaine/veille.js';
 import {
+  creerLien,
+  listerLiens,
+  desactiverLien,
+  statistiquesLiens,
+  lienActif,
+} from '../domaine/liens.js';
+import {
+  listerReponses,
+  repondre,
+  statistiquesReponses,
+} from '../domaine/commentaires.js';
+import {
   etatConfiguration,
   enregistrerCompte,
   enregistrerAgent,
@@ -100,6 +112,34 @@ route('POST', /^\/api\/configuration\/finaliser$/, async () => {
   const configuration = finaliserConfiguration();
   const etat = await moteur.demarrerMoteur({ silencieux: true });
   return { configuration, etat };
+});
+
+/* ───────────── lien externe & commentaires ───────────── */
+route('GET', /^\/api\/liens$/, () => ({
+  liens: listerLiens(),
+  statistiques: statistiquesLiens({ jours: 30 }),
+  recommande: lienActif(),
+  urlPublique: config.urlPublique,
+}));
+
+route('POST', /^\/api\/liens$/, async (req) => {
+  const lien = creerLien(await lireJson(req));
+  return { lien, liens: listerLiens() };
+});
+
+route('DELETE', /^\/api\/liens\/([^/]+)$/, (req, res, [id]) => ({ lien: desactiverLien(id) }));
+
+route('GET', /^\/api\/commentaires$/, (req, res, params, url) => ({
+  reponses: listerReponses({ statut: q(url, 'statut'), limite: nombre(url, 'limite', 100) }),
+  statistiques: statistiquesReponses(),
+  actif: config.reponsesCommentaires,
+}));
+
+route('POST', /^\/api\/commentaires\/([^/]+)\/repondre$/, async (req, res, [id]) => {
+  if (!config.reponsesCommentaires) throw new ErreurHttp(403, 'Réponses aux commentaires désactivées');
+  const reponse = await repondre(id);
+  if (!reponse) throw new ErreurHttp(404, 'Commentaire introuvable');
+  return { reponse };
 });
 
 /* ───────────── état & pilotage ───────────── */
@@ -214,7 +254,11 @@ route('POST', /^\/api\/contenus\/upload$/, async (req) => {
   const corps = await lireJson(req, 40_000_000);
   return { contenu: ajouterContenu(corps) };
 });
-route('POST', /^\/api\/contenus\/synchroniser$/, () => synchroniser());
+route('POST', /^\/api\/contenus\/synchroniser$/, async () => {
+  const google = await moteur.synchroniserDriveSiConfigure();
+  const local = synchroniser();
+  return { ...local, google };
+});
 route('POST', /^\/api\/contenus\/([^/]+)\/telecharger$/, (req, res, [id]) => {
   const contenu = telecharger(id);
   if (!contenu) throw new ErreurHttp(404, 'Contenu introuvable');
@@ -293,6 +337,8 @@ route('GET', /^\/api\/statistiques$/, (req, res, params, url) => {
     top: topPublications({ limite: 5, periode }),
     kpis: kpisGlobaux(),
     courbe: courbeAbonnes({ jours: 30 }),
+    // Trafic externe : seul indicateur mesuré hors Instagram.
+    liens: statistiquesLiens({ jours: periode === 'jour' ? 1 : periode === 'semaine' ? 7 : 30 }),
     objectif: OBJECTIF,
   };
 });

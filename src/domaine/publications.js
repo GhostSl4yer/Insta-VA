@@ -116,8 +116,9 @@ export async function publierPublication(id, { baseUrl = '' } = {}) {
       miniatureUrl: url,
     });
     executer(
-      `UPDATE publication SET statut = 'Publiee', lien = ?, erreur = NULL WHERE id = ?`,
+      `UPDATE publication SET statut = 'Publiee', lien = ?, media_id_externe = ?, erreur = NULL WHERE id = ?`,
       resultat.permalink,
+      resultat.id || null,
       id,
     );
     if (ligne.contenu_id) {

@@ -38,6 +38,7 @@ function zoneHero(etat) {
           <span class="chip">${etat.horloge.sessionCourante ? `Session ${etat.horloge.sessionCourante.numero} · ${etat.horloge.sessionCourante.heureDebut}–${etat.horloge.sessionCourante.heureFin}` : 'Hors session'}</span>
           <span class="chip">Objectif visionnage <strong>${etat.journee.visionnage.minutes}/${etat.journee.visionnage.objectif / 60} min</strong></span>
           <span class="chip">Vitesse <strong>${etat.horloge.vitesse}</strong> min/s</span>
+          ${etat.liens ? `<span class="chip">Clics lien <strong>${nf(etat.liens.clicsAujourdhui)}</strong> aujourd’hui · ${nf(etat.liens.clics30Jours)} / 30 j</span>` : ''}
           <span class="chip">${paysDrapeaux(etat.audience.paysAutorises)}</span>
         </div>
       </div>

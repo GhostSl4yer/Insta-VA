@@ -8,6 +8,7 @@ import { formatDateFr, ajouterJours } from '../utils/temps.js';
 import { nombreFr, pourcentageFr } from '../utils/texte.js';
 import { OBJECTIF, PAYS_AUTORISES, LIBELLES_PAYS } from '../../public/shared/enums.js';
 import { OBJECTIF_AUDIENCE } from '../donnees/personas.js';
+import { statistiquesLiens } from './liens.js';
 import { journaliser, notifier } from './journal.js';
 import { listerAnomalies } from './anomalies.js';
 import { agregerPeriode, statistiquesDuJour, repartitionPays } from './statistiques.js';
@@ -73,6 +74,10 @@ function recommandations(stats, { visionnageMin, anomalies }) {
 }
 
 function composerContenu({ type, date, compte, cycle, stats, problemes, recommandations: recos, publications, repartition, periodeLabel }) {
+  const clicsLien =
+    type === 'quotidien'
+      ? statistiquesLiens({ jours: 1 }).aujourdhui ?? 0
+      : statistiquesLiens({ jours: type === 'hebdomadaire' ? 7 : config.dureeCycleJours }).total;
   const engagement = stats.portee > 0 ? arrondi(((stats.likes + stats.commentaires) / Math.max(1, stats.portee)) * 100, 2) : 0;
   const titre = {
     quotidien: 'Rapport quotidien',
@@ -112,6 +117,7 @@ Taux d’engagement : **${pourcentageFr(engagement)}** (objectif ${pourcentageFr
 | Interactions | ${nombreFr(stats.interactions)} | 48–92 / jour |
 | Abonnés gagnés | ${nombreFr(stats.abonnesGagnes)} | ${OBJECTIF_AUDIENCE.abonnesCible} / 30 j |
 | Publications | ${nombreFr(stats.publications)} | 4–5 / jour |
+| Clics sur le lien | ${nombreFr(clicsLien)} | trafic externe |
 
 ## 3. Publications
 
@@ -161,6 +167,7 @@ export function genererRapport({ type = 'quotidien', date, cycle = null, compte,
     `SELECT * FROM publication WHERE jour = ? AND statut = 'Publiee' ORDER BY date_heure`,
     date,
   );
+
   const repartition =
     type === 'quotidien' && Array.isArray(statsJour.details?.parPays) && statsJour.details.parPays.length
       ? statsJour.details.parPays.map((p) => {

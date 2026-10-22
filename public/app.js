@@ -6,6 +6,7 @@ import vueDrive from './views/drive.js';
 import vuePublications from './views/publications.js';
 import vueCibles from './views/cibles.js';
 import vueInteractions from './views/interactions.js';
+import vueLiens from './views/liens.js';
 import vueAbonnements from './views/abonnements.js';
 import vueStatistiques from './views/statistiques.js';
 import vueRapports from './views/rapports.js';
@@ -67,6 +68,7 @@ const ROUTES = [
   { section: 'Contenus' },
   { cle: 'drive', chemin: '/drive', titre: 'Drive', vue: vueDrive, icone: 'drive' },
   { cle: 'publications', chemin: '/publications', titre: 'Publications', vue: vuePublications, icone: 'publications' },
+  { cle: 'liens', chemin: '/liens', titre: 'Lien & commentaires', vue: vueLiens, icone: 'interactions' },
   { section: 'Audience', condition: 'interactions' },
   { cle: 'cibles', chemin: '/cibles', titre: 'Cibles scorées', vue: vueCibles, icone: 'cibles' },
   { cle: 'interactions', chemin: '/interactions', titre: 'Interactions', vue: vueInteractions, icone: 'interactions' },

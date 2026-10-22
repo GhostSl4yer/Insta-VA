@@ -284,14 +284,73 @@ CREATE INDEX IF NOT EXISTS idx_stats_date ON statistiques (date);
 CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal_evenement (ts);
 CREATE INDEX IF NOT EXISTS idx_execution_jour ON execution (jour);
 CREATE INDEX IF NOT EXISTS idx_contenu_statut ON contenu_drive (statut);
+
+CREATE TABLE IF NOT EXISTS lien_suivi (
+  id          TEXT PRIMARY KEY,
+  code        TEXT NOT NULL UNIQUE,
+  url         TEXT NOT NULL,
+  libelle     TEXT NOT NULL DEFAULT '',
+  campagne    TEXT NOT NULL DEFAULT '',
+  date_creation TEXT NOT NULL,
+  actif       INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS clic_lien (
+  id         TEXT PRIMARY KEY,
+  lien_id    TEXT NOT NULL,
+  date       TEXT NOT NULL,
+  pays       TEXT NOT NULL DEFAULT '',
+  referent   TEXT NOT NULL DEFAULT '',
+  ts         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reponse_commentaire (
+  id              TEXT PRIMARY KEY,
+  media_id        TEXT NOT NULL,
+  commentaire_id  TEXT NOT NULL UNIQUE,
+  auteur          TEXT NOT NULL DEFAULT '',
+  texte_recu      TEXT NOT NULL DEFAULT '',
+  reponse         TEXT NOT NULL DEFAULT '',
+  langue          TEXT NOT NULL DEFAULT '',
+  intention       TEXT NOT NULL DEFAULT '',
+  statut          TEXT NOT NULL DEFAULT 'ARepondre',
+  date_commentaire TEXT NOT NULL DEFAULT '',
+  date_reponse    TEXT,
+  erreur          TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_clic_date ON clic_lien (date);
+CREATE INDEX IF NOT EXISTS idx_clic_lien ON clic_lien (lien_id);
 `;
+
+/**
+ * Migrations additives : `ALTER TABLE … ADD COLUMN` ne peut pas utiliser
+ * `IF NOT EXISTS` en SQLite, on vérifie donc la colonne avant de l'ajouter.
+ */
+const COLONNES_AJOUTEES = [
+  ['contenu_drive', 'drive_file_id', 'TEXT'],
+  ['contenu_drive', 'drive_dossier_id', 'TEXT'],
+  ['publication', 'media_id_externe', 'TEXT'],
+  ['compte_instagram', 'lien_suivi_actif', 'INTEGER NOT NULL DEFAULT 0'],
+];
 
 export function ouvrirBase() {
   if (base) return base;
   fs.mkdirSync(config.dossierDonnees, { recursive: true });
   base = new DatabaseSync(config.fichierBase);
   base.exec(SCHEMA);
+  migrer();
   return base;
+}
+
+function migrer() {
+  for (const [table, colonne, definition] of COLONNES_AJOUTEES) {
+    const existe = base
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .some((c) => c.name === colonne);
+    if (!existe) base.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+  }
 }
 
 export function db() {

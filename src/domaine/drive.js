@@ -10,6 +10,12 @@ import { CONCEPTS, THEMES } from '../donnees/concepts.js';
 import { composerLegende, texteStory } from '../donnees/legende.js';
 import { journaliser } from './journal.js';
 import { ecrireVisuel, choisirPalette } from './visuels.js';
+import {
+  driveConfigure,
+  listerFichiers,
+  telechargerFichier,
+  deplacerFichier,
+} from '../services/drive-google.js';
 
 const DOSSIERS = { Reel: 'reels', Story: 'stories', UnePleine: 'livre', PhotoProfil: 'photos' };
 const TAGS_THEME = { fitness: '#fitness', nutrition: '#nutrition', running: '#running', bienetre: '#bienetre', ia: '#IA' };
@@ -35,6 +41,8 @@ function mapper(ligne) {
     emoji: THEMES[theme]?.emoji || '✨',
     miniature: ligne.miniature,
     source: ligne.source,
+    driveFileId: ligne.drive_file_id || null,
+    driveDossierId: ligne.drive_dossier_id || null,
     image: urlMedia(ligne.chemin_public),
   };
 }
@@ -377,6 +385,106 @@ export function synchroniser() {
     donnees: { importes },
   });
   return { importes, total: tous('SELECT COUNT(*) AS n FROM contenu_drive')[0]?.n ?? 0 };
+}
+
+/**
+ * Importe les fichiers présents sur Google Drive (source centrale du cahier des
+ * charges). Idempotent : un fichier déjà importé n'est pas retéléchargé.
+ * Les fichiers restent dans le Drive ; ils seront déplacés vers le dossier
+ * d'archive après publication confirmée.
+ */
+export async function synchroniserDrive({ types = ['Story', 'Reel', 'UnePleine', 'PhotoProfil'] } = {}) {
+  if (!config.googleDrive.active || !driveConfigure()) {
+    return { actif: false, total: 0, parType: {}, erreurs: [] };
+  }
+  const importes = { parType: {}, total: 0 };
+  const erreurs = [];
+  const connus = new Set(
+    tous('SELECT drive_file_id FROM contenu_drive WHERE drive_file_id IS NOT NULL').map((l) => l.drive_file_id),
+  );
+
+  for (const type of types) {
+    const dossierId = config.googleDrive.dossiers[type];
+    if (!dossierId) continue;
+    let fichiers = [];
+    try {
+      fichiers = await listerFichiers(dossierId);
+    } catch (erreur) {
+      erreurs.push({ type, message: erreur.message });
+      journaliser(`Drive Google illisible (${type}) : ${erreur.message}`, {
+        niveau: 'alerte',
+        categorie: 'drive',
+      });
+      continue;
+    }
+    for (const fichier of fichiers) {
+      if (connus.has(fichier.id)) continue;
+      const extension = path.extname(fichier.name || '').toLowerCase();
+      if (!['.mp4', '.mov', '.webm', '.jpg', '.jpeg', '.png', '.webp'].includes(extension)) continue;
+      try {
+        const octets = await telechargerFichier(fichier.id);
+        if (octets.length > 200 * 1024 * 1024) {
+          throw new Error('fichier supérieur à 200 Mo');
+        }
+        const relatif = path.posix.join('telecharges', `${type.toLowerCase()}-${slug(path.basename(fichier.name, extension))}${extension}`);
+        const absolu = path.join(config.dossierDrive, relatif);
+        fs.mkdirSync(path.dirname(absolu), { recursive: true });
+        fs.writeFileSync(absolu, octets);
+        executer(
+          `INSERT INTO contenu_drive
+            (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
+             statut, format, theme, miniature, source, drive_file_id, drive_dossier_id)
+           VALUES (?, NULL, ?, ?, ?, 'prive', ?, ?, 'Telecharge', ?, 'fitness', ?, 'google-drive', ?, ?)`,
+          uuid(),
+          type,
+          absolu,
+          relatif,
+          path.basename(fichier.name, extension).replace(/[_-]+/g, ' '),
+          new Date().toISOString(),
+          type,
+          relatif,
+          fichier.id,
+          dossierId,
+        );
+        connus.add(fichier.id);
+        importes.parType[type] = (importes.parType[type] || 0) + 1;
+        importes.total += 1;
+      } catch (erreur) {
+        erreurs.push({ type, fichier: fichier.name, message: erreur.message });
+      }
+    }
+  }
+
+  if (importes.total || erreurs.length) {
+    journaliser(
+      `Google Drive synchronisé : ${importes.total} fichier(s) importé(s)${
+        erreurs.length ? ` · ${erreurs.length} erreur(s)` : ''
+      }.`,
+      { categorie: 'drive', niveau: erreurs.length ? 'alerte' : 'info', donnees: importes },
+    );
+  }
+  return { actif: true, ...importes, erreurs };
+}
+
+/**
+ * Archivage sur le Drive après publication confirmée : le fichier quitte le
+ * dossier « à publier » sans être supprimé (restauration possible).
+ */
+export async function archiverSurDrive(id) {
+  const contenu = obtenirContenu(id);
+  if (!contenu?.driveFileId || !config.googleDrive.dossierArchive) return { deplace: false };
+  try {
+    const resultat = await deplacerFichier(contenu.driveFileId, {
+      depuis: contenu.driveDossierId || undefined,
+      vers: config.googleDrive.dossierArchive,
+    });
+    executer(`UPDATE contenu_drive SET drive_dossier_id = ? WHERE id = ?`, config.googleDrive.dossierArchive, id);
+    journaliser(`Contenu ${contenu.type} déplacé vers le dossier d’archive du Drive.`, { categorie: 'drive' });
+    return resultat;
+  } catch (erreur) {
+    journaliser(`Archivage Drive impossible : ${erreur.message}`, { niveau: 'alerte', categorie: 'drive' });
+    return { deplace: false, erreur: erreur.message };
+  }
 }
 
 /** Ajout d'un média par le responsable (glisser-déposer dans l'interface). */
