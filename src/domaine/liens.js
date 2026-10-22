@@ -4,6 +4,7 @@ import { uuid } from '../utils/ids.js';
 import { dateDansFuseau, ajouterJours } from '../utils/temps.js';
 import { config } from '../config.js';
 import { journaliser } from './journal.js';
+import { compteIdCourant, exigerCompte } from './contexte.js';
 
 /**
  * Suivi du lien externe — l'indicateur « clics sur le lien » du cahier des charges.
@@ -33,14 +34,15 @@ export function creerLien({ url, libelle = '', campagne = '' } = {}) {
   while (un('SELECT 1 AS n FROM lien_suivi WHERE code = ?', code)) code = genererCode();
   const id = uuid();
   executer(
-    `INSERT INTO lien_suivi (id, code, url, libelle, campagne, date_creation, actif)
-     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    `INSERT INTO lien_suivi (id, code, url, libelle, campagne, date_creation, actif, compte_id)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
     id,
     code,
     destination,
     String(libelle || '').slice(0, 80),
     String(campagne || '').slice(0, 40),
     new Date().toISOString(),
+    exigerCompte(),
   );
   journaliser(`Lien de suivi créé : /l/${code} → ${destination}`, { categorie: 'statistiques' });
   return mapper(un('SELECT * FROM lien_suivi WHERE id = ?', id));
@@ -63,7 +65,7 @@ function mapper(ligne) {
 }
 
 export function listerLiens() {
-  return tous('SELECT * FROM lien_suivi ORDER BY date_creation DESC').map(mapper);
+  return tous('SELECT * FROM lien_suivi WHERE compte_id = ? ORDER BY date_creation DESC', exigerCompte()).map(mapper);
 }
 
 export function obtenirLien(code) {
@@ -71,11 +73,11 @@ export function obtenirLien(code) {
 }
 
 export function obtenirLienParId(id) {
-  return mapper(un('SELECT * FROM lien_suivi WHERE id = ?', id));
+  return mapper(un('SELECT * FROM lien_suivi WHERE id = ? AND compte_id = ?', id, exigerCompte()));
 }
 
 export function desactiverLien(id) {
-  executer('UPDATE lien_suivi SET actif = 0 WHERE id = ?', id);
+  executer('UPDATE lien_suivi SET actif = 0 WHERE id = ? AND compte_id = ?', id, exigerCompte());
   return obtenirLienParId(id);
 }
 
@@ -83,6 +85,8 @@ export function desactiverLien(id) {
 export function enregistrerClic({ code, pays = '', referent = '', date = null }) {
   const lien = un('SELECT * FROM lien_suivi WHERE code = ? AND actif = 1', code);
   if (!lien) return null;
+  // Le clic est rattaché au compte propriétaire du lien (la route publique n'a
+  // pas de session : le compte se déduit du lien, jamais d'une valeur externe).
   const jour = date || dateDansFuseau(config.fuseau);
   executer(
     `INSERT INTO clic_lien (id, lien_id, date, pays, referent, ts) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -97,35 +101,57 @@ export function enregistrerClic({ code, pays = '', referent = '', date = null })
 }
 
 export function clicsDuJour(date = dateDansFuseau(config.fuseau)) {
-  return un('SELECT COUNT(*) AS n FROM clic_lien WHERE date = ?', date)?.n ?? 0;
+  return un(
+    `SELECT COUNT(*) AS n FROM clic_lien c JOIN lien_suivi l ON l.id = c.lien_id
+      WHERE c.date = ? AND l.compte_id = ?`,
+    date,
+    compteIdCourant() || '',
+  )?.n ?? 0;
 }
 
 export function statistiquesLiens({ jours = 30 } = {}) {
+  const compteId = compteIdCourant() || '';
   const fin = dateDansFuseau(config.fuseau);
   const debut = ajouterJours(fin, -(Math.max(1, jours) - 1));
-  const total = un('SELECT COUNT(*) AS n FROM clic_lien WHERE date BETWEEN ? AND ?', debut, fin)?.n ?? 0;
-  const serie = tous(
-    `SELECT date, COUNT(*) AS clics FROM clic_lien WHERE date BETWEEN ? AND ? GROUP BY date ORDER BY date`,
+  const total = un(
+    `SELECT COUNT(*) AS n FROM clic_lien c JOIN lien_suivi l ON l.id = c.lien_id
+      WHERE c.date BETWEEN ? AND ? AND l.compte_id = ?`,
     debut,
     fin,
+    compteId,
+  )?.n ?? 0;
+  const serie = tous(
+    `SELECT c.date, COUNT(*) AS clics FROM clic_lien c JOIN lien_suivi l ON l.id = c.lien_id
+      WHERE c.date BETWEEN ? AND ? AND l.compte_id = ?
+      GROUP BY c.date ORDER BY c.date`,
+    debut,
+    fin,
+    compteId,
   );
   const parLien = tous(
     `SELECT l.code, l.url, l.libelle, COUNT(c.id) AS clics
        FROM lien_suivi l LEFT JOIN clic_lien c ON c.lien_id = l.id AND c.date BETWEEN ? AND ?
+      WHERE l.compte_id = ?
       GROUP BY l.id ORDER BY clics DESC`,
     debut,
     fin,
+    compteId,
   );
   const parPays = tous(
-    `SELECT CASE WHEN pays = '' THEN 'Inconnu' ELSE pays END AS pays, COUNT(*) AS clics
-       FROM clic_lien WHERE date BETWEEN ? AND ? GROUP BY pays ORDER BY clics DESC LIMIT 12`,
+    `SELECT CASE WHEN c.pays = '' THEN 'Inconnu' ELSE c.pays END AS pays, COUNT(*) AS clics
+       FROM clic_lien c JOIN lien_suivi l ON l.id = c.lien_id
+      WHERE c.date BETWEEN ? AND ? AND l.compte_id = ?
+      GROUP BY c.pays ORDER BY clics DESC LIMIT 12`,
     debut,
     fin,
+    compteId,
   );
   const septJours = un(
-    'SELECT COUNT(*) AS n FROM clic_lien WHERE date BETWEEN ? AND ?',
+    `SELECT COUNT(*) AS n FROM clic_lien c JOIN lien_suivi l ON l.id = c.lien_id
+      WHERE c.date BETWEEN ? AND ? AND l.compte_id = ?`,
     ajouterJours(fin, -6),
     fin,
+    compteId,
   )?.n ?? 0;
   return {
     periode: { debut, fin },
@@ -142,5 +168,7 @@ export function statistiquesLiens({ jours = 30 } = {}) {
 
 /** Lien recommandé pour la bio : le premier lien actif, sinon null. */
 export function lienActif() {
-  return mapper(un('SELECT * FROM lien_suivi WHERE actif = 1 ORDER BY date_creation DESC LIMIT 1'));
+  return mapper(
+    un('SELECT * FROM lien_suivi WHERE actif = 1 AND compte_id = ? ORDER BY date_creation DESC LIMIT 1', compteIdCourant() || ''),
+  );
 }

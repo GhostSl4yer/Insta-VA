@@ -14,7 +14,7 @@ import vueJournal from './views/journal.js';
 import vueAnomalies from './views/anomalies.js';
 import vueArchitecture from './views/architecture.js';
 import vueParametres from './views/parametres.js';
-import vueInstallation from './views/installation.js';
+import vueComptes from './views/comptes.js';
 
 /* ─────────────────────────── icônes ─────────────────────────── */
 
@@ -60,7 +60,7 @@ const icone = (nom, taille = 17) =>
 /* ─────────────────────────── navigation ─────────────────────────── */
 
 const ROUTES = [
-  { cle: 'installation', chemin: '/installation', titre: 'Mise en service', vue: vueInstallation, icone: 'parametres', horsNav: true },
+  { cle: 'comptes', chemin: '/comptes', titre: 'Comptes Instagram', vue: vueComptes, icone: 'parametres' },
   { section: 'Pilotage' },
   { cle: 'pilotage', chemin: '/', titre: 'Tableau de bord', vue: vuePilotage, icone: 'pilotage' },
   { cle: 'cycle', chemin: '/cycle', titre: 'Cycle & journées', vue: vueCycle, icone: 'cycle' },
@@ -69,10 +69,6 @@ const ROUTES = [
   { cle: 'drive', chemin: '/drive', titre: 'Drive', vue: vueDrive, icone: 'drive' },
   { cle: 'publications', chemin: '/publications', titre: 'Publications', vue: vuePublications, icone: 'publications' },
   { cle: 'liens', chemin: '/liens', titre: 'Lien & commentaires', vue: vueLiens, icone: 'interactions' },
-  { section: 'Audience', condition: 'interactions' },
-  { cle: 'cibles', chemin: '/cibles', titre: 'Cibles scorées', vue: vueCibles, icone: 'cibles' },
-  { cle: 'interactions', chemin: '/interactions', titre: 'Interactions', vue: vueInteractions, icone: 'interactions' },
-  { cle: 'abonnements', chemin: '/abonnements', titre: 'Abonnements', vue: vueAbonnements, icone: 'abonnements' },
   { section: 'Analyse' },
   { cle: 'statistiques', chemin: '/statistiques', titre: 'Statistiques', vue: vueStatistiques, icone: 'statistiques' },
   { cle: 'rapports', chemin: '/rapports', titre: 'Rapports', vue: vueRapports, icone: 'rapports' },
@@ -155,7 +151,7 @@ function routesVisibles() {
       sortie.push(route);
       continue;
     }
-    if (!interactions && ['cibles', 'interactions', 'abonnements'].includes(route.cle)) continue;
+    if (['cibles', 'interactions', 'abonnements', 'installation'].includes(route.cle)) continue;
     if (sectionEnAttente) {
       sortie.push({ section: sectionEnAttente });
       sectionEnAttente = null;

@@ -1,5 +1,6 @@
 import { executer, tous, un } from '../db.js';
 import { identifiant, uuid } from '../utils/ids.js';
+import { compteIdCourant } from './contexte.js';
 
 /** Journal d'événements (canvas « journal / traçabilité »). */
 export function journaliser(message, options = {}) {
@@ -13,8 +14,8 @@ export function journaliser(message, options = {}) {
   const id = uuid();
   const ts = new Date().toISOString();
   executer(
-    `INSERT INTO journal_evenement (id, ts, niveau, categorie, message, donnees, jour, cycle_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO journal_evenement (id, ts, niveau, categorie, message, donnees, jour, cycle_id, compte_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     ts,
     niveau,
@@ -23,13 +24,14 @@ export function journaliser(message, options = {}) {
     JSON.stringify(donnees ?? {}),
     jour,
     cycleId,
+    compteIdCourant() || '',
   );
   return { id, ts, niveau, categorie, message, donnees, jour, cycleId };
 }
 
 export function listerJournal({ limite = 80, niveau, categorie, jour, cycleId, recherche } = {}) {
-  const clauses = [];
-  const params = [];
+  const clauses = ['compte_id = ?'];
+  const params = [compteIdCourant() || ''];
   if (niveau) {
     clauses.push('niveau = ?');
     params.push(niveau);
@@ -65,19 +67,21 @@ export function listerJournal({ limite = 80, niveau, categorie, jour, cycleId, r
 }
 
 export function compterJournalDepuis(iso) {
-  return un('SELECT COUNT(*) AS n FROM journal_evenement WHERE ts >= ?', iso)?.n ?? 0;
+  return un('SELECT COUNT(*) AS n FROM journal_evenement WHERE ts >= ? AND compte_id = ?', iso, compteIdCourant() || '')?.n ?? 0;
 }
 
 export function categoriesJournal() {
-  return tous('SELECT DISTINCT categorie FROM journal_evenement ORDER BY categorie').map((l) => l.categorie);
+  return tous('SELECT DISTINCT categorie FROM journal_evenement WHERE compte_id = ? ORDER BY categorie', compteIdCourant() || '').map(
+    (l) => l.categorie,
+  );
 }
 
 /** Notification destinée au responsable (cloche de l'interface). */
 export function notifier({ type = 'info', titre, message, niveau = 'Info', lien = '' }) {
   const id = uuid();
   executer(
-    `INSERT INTO notification (id, type, titre, message, niveau, lu, date_notif, lien)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO notification (id, type, titre, message, niveau, lu, date_notif, lien, compte_id)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     id,
     type,
     titre,
@@ -85,24 +89,29 @@ export function notifier({ type = 'info', titre, message, niveau = 'Info', lien 
     niveau,
     new Date().toISOString(),
     lien,
+    compteIdCourant() || '',
   );
   return id;
 }
 
 export function listerNotifications(limite = 30) {
-  return tous('SELECT * FROM notification ORDER BY date_notif DESC LIMIT ?', limite);
+  return tous(
+    'SELECT * FROM notification WHERE compte_id = ? ORDER BY date_notif DESC LIMIT ?',
+    compteIdCourant() || '',
+    limite,
+  );
 }
 
 export function compterNotificationsNonLues() {
-  return un('SELECT COUNT(*) AS n FROM notification WHERE lu = 0')?.n ?? 0;
+  return un('SELECT COUNT(*) AS n FROM notification WHERE lu = 0 AND compte_id = ?', compteIdCourant() || '')?.n ?? 0;
 }
 
 export function marquerNotificationLue(id) {
-  return executer('UPDATE notification SET lu = 1 WHERE id = ?', id).changes;
+  return executer('UPDATE notification SET lu = 1 WHERE id = ? AND compte_id = ?', id, compteIdCourant() || '').changes;
 }
 
 export function marquerToutesLues() {
-  return executer('UPDATE notification SET lu = 1 WHERE lu = 0').changes;
+  return executer('UPDATE notification SET lu = 1 WHERE lu = 0 AND compte_id = ?', compteIdCourant() || '').changes;
 }
 
 export function identifiantCourt() {

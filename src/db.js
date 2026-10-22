@@ -321,6 +321,13 @@ CREATE TABLE IF NOT EXISTS reponse_commentaire (
 
 CREATE INDEX IF NOT EXISTS idx_clic_date ON clic_lien (date);
 CREATE INDEX IF NOT EXISTS idx_clic_lien ON clic_lien (lien_id);
+
+-- État d'exécution persisté : chaque compte a son horloge et son plan.
+CREATE TABLE IF NOT EXISTS etat_moteur (
+  compte_id  TEXT PRIMARY KEY,
+  etat       TEXT NOT NULL,
+  maj_le     TEXT NOT NULL
+);
 `;
 
 /**
@@ -332,6 +339,49 @@ const COLONNES_AJOUTEES = [
   ['contenu_drive', 'drive_dossier_id', 'TEXT'],
   ['publication', 'media_id_externe', 'TEXT'],
   ['compte_instagram', 'lien_suivi_actif', 'INTEGER NOT NULL DEFAULT 0'],
+  // Identifiants et réglages propres à chaque compte (multi-comptes).
+  ['compte_instagram', 'ig_user_id', "TEXT NOT NULL DEFAULT ''"],
+  ['compte_instagram', 'jeton_chiffre', "TEXT NOT NULL DEFAULT ''"],
+  ['compte_instagram', 'drive_url', "TEXT NOT NULL DEFAULT ''"],
+  ['compte_instagram', 'drive_folder_id', "TEXT NOT NULL DEFAULT ''"],
+  ['compte_instagram', 'drive_sous_dossiers', "TEXT NOT NULL DEFAULT '{}'"],
+  ['compte_instagram', 'fuseau', "TEXT NOT NULL DEFAULT 'Africa/Porto-Novo'"],
+  ['compte_instagram', 'heure_debut', "TEXT NOT NULL DEFAULT '16:00'"],
+  ['compte_instagram', 'statut', "TEXT NOT NULL DEFAULT 'EnAttente'"],
+  ['compte_instagram', 'actif', 'INTEGER NOT NULL DEFAULT 1'],
+  ['compte_instagram', 'notes', "TEXT NOT NULL DEFAULT ''"],
+  ['compte_instagram', 'derniere_sync', 'TEXT'],
+  ['compte_instagram', 'derniere_erreur', 'TEXT'],
+  // Cloisonnement des données par compte.
+  ['session_quotidienne', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['contenu_drive', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['interaction', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['abonnement', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['cible', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['veille', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['journal_evenement', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['anomalie', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['execution', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['notification', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['lien_suivi', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+  ['reponse_commentaire', 'compte_id', "TEXT NOT NULL DEFAULT ''"],
+];
+
+// Tables cloisonnées : la migration supprime les lignes orphelines (données de
+// démonstration d'avant le multi-comptes). Aucune donnée réelle n'est concernée.
+const TABLES_CLOISONNEES = [
+  'session_quotidienne',
+  'contenu_drive',
+  'interaction',
+  'abonnement',
+  'cible',
+  'veille',
+  'journal_evenement',
+  'anomalie',
+  'execution',
+  'notification',
+  'lien_suivi',
+  'reponse_commentaire',
 ];
 
 export function ouvrirBase() {
@@ -350,6 +400,27 @@ function migrer() {
       .all()
       .some((c) => c.name === colonne);
     if (!existe) base.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+  }
+  // Les données antérieures au multi-comptes n'ont pas de compte : elles étaient
+  // générées par la démonstration, on les retire au lieu de les rattacher à tort.
+  for (const table of TABLES_CLOISONNEES) {
+    base.exec(`DELETE FROM ${table} WHERE compte_id IS NULL OR compte_id = ''`);
+  }
+  base.exec(`DELETE FROM cycle WHERE compte_id IS NULL OR compte_id = ''`);
+  base.exec(`DELETE FROM publication WHERE compte_id IS NULL OR compte_id = ''`);
+  base.exec(`DELETE FROM statistiques WHERE compte_id IS NULL OR compte_id = ''`);
+  base.exec(`DELETE FROM rapport WHERE compte_id IS NULL OR compte_id = ''`);
+  base.exec(`DELETE FROM parametres_audience WHERE compte_id IS NULL OR compte_id = ''`);
+  for (const table of [
+    ...TABLES_CLOISONNEES,
+    'cycle',
+    'publication',
+    'statistiques',
+    'rapport',
+    'parametres_audience',
+    'compte_suivi',
+  ]) {
+    base.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_compte ON ${table} (compte_id)`);
   }
 }
 

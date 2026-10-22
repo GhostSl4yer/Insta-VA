@@ -5,6 +5,7 @@ import { journaliser, notifier } from './journal.js';
 import { detecterAnomalie } from './anomalies.js';
 import { choisirReponse } from '../donnees/reponses.js';
 import { listerCommentaires, repondreCommentaire as repondreViaApi } from '../services/commentaires.js';
+import { exigerCompte } from './contexte.js';
 
 /**
  * Réponses aux commentaires reçus — priorité du cahier des charges et seule
@@ -37,8 +38,8 @@ const mapper = (ligne) =>
     : null;
 
 export function listerReponses({ statut = null, limite = 100 } = {}) {
-  const clauses = [];
-  const params = [];
+  const clauses = ['compte_id = ?'];
+  const params = [exigerCompte()];
   if (statut) {
     clauses.push('statut = ?');
     params.push(statut);
@@ -50,7 +51,10 @@ export function listerReponses({ statut = null, limite = 100 } = {}) {
 }
 
 export function statistiquesReponses() {
-  const parStatut = tous('SELECT statut, COUNT(*) AS n FROM reponse_commentaire GROUP BY statut');
+  const parStatut = tous(
+    'SELECT statut, COUNT(*) AS n FROM reponse_commentaire WHERE compte_id = ? GROUP BY statut',
+    exigerCompte(),
+  );
   const total = parStatut.reduce((somme, ligne) => somme + ligne.n, 0);
   const repondues = parStatut.find((l) => l.statut === 'Repondu')?.n ?? 0;
   return {
@@ -65,7 +69,12 @@ export function statistiquesReponses() {
 
 /** Enregistre un commentaire reçu et prépare sa réponse écrite à l'avance. */
 export function enregistrerCommentaire({ mediaId, commentaireId, auteur = '', texte = '', date = '' }) {
-  const existant = un('SELECT * FROM reponse_commentaire WHERE commentaire_id = ?', commentaireId);
+  const compteId = exigerCompte();
+  const existant = un(
+    'SELECT * FROM reponse_commentaire WHERE commentaire_id = ? AND compte_id = ?',
+    commentaireId,
+    compteId,
+  );
   if (existant) return mapper(existant);
   const graine = [...String(commentaireId)].reduce((a, c) => a + c.charCodeAt(0), 0);
   const choix = choisirReponse(texte, { graine });
@@ -89,15 +98,16 @@ export function enregistrerCommentaire({ mediaId, commentaireId, auteur = '', te
 
 /** Répond réellement (API Graph) à un commentaire enregistré. */
 export async function repondre(id) {
-  const ligne = un('SELECT * FROM reponse_commentaire WHERE id = ?', id);
+  const ligne = un('SELECT * FROM reponse_commentaire WHERE id = ? AND compte_id = ?', id, exigerCompte());
   if (!ligne) return null;
   if (ligne.statut === 'Repondu') return mapper(ligne);
   try {
     await repondreViaApi(ligne.commentaire_id, ligne.reponse);
     executer(
-      `UPDATE reponse_commentaire SET statut = 'Repondu', date_reponse = ?, erreur = NULL WHERE id = ?`,
+      `UPDATE reponse_commentaire SET statut = 'Repondu', date_reponse = ?, erreur = NULL WHERE id = ? AND compte_id = ?`,
       new Date().toISOString(),
       id,
+      ligne.compte_id,
     );
     journaliser(`Réponse publiée à @${ligne.auteur || 'un abonné'}.`, {
       categorie: 'interaction',
@@ -105,7 +115,12 @@ export async function repondre(id) {
     });
     return mapper(un('SELECT * FROM reponse_commentaire WHERE id = ?', id));
   } catch (erreur) {
-    executer(`UPDATE reponse_commentaire SET statut = 'Echec', erreur = ? WHERE id = ?`, erreur.message, id);
+    executer(
+      `UPDATE reponse_commentaire SET statut = 'Echec', erreur = ? WHERE id = ? AND compte_id = ?`,
+      erreur.message,
+      id,
+      ligne.compte_id,
+    );
     detecterAnomalie('ReponseCommentaire', `Réponse impossible : ${erreur.message}`, {
       severite: 'Avertissement',
       details: { commentaireId: ligne.commentaire_id },
@@ -120,10 +135,12 @@ export async function repondre(id) {
  */
 export async function collecterEtRepondre({ limiteMedias = 5, limiteParMedia = 30 } = {}) {
   if (!config.reponsesCommentaires) return { actif: false, nouveaux: 0, repondues: 0 };
+  const compteId = exigerCompte();
   const medias = tous(
     `SELECT id, media_id_externe FROM publication
-      WHERE statut = 'Publiee' AND media_id_externe IS NOT NULL
+      WHERE statut = 'Publiee' AND media_id_externe IS NOT NULL AND compte_id = ?
       ORDER BY date_heure DESC LIMIT ?`,
+    compteId,
     limiteMedias,
   );
   let nouveaux = 0;
@@ -167,7 +184,8 @@ export async function collecterEtRepondre({ limiteMedias = 5, limiteParMedia = 3
 export function verifierCommentairesEnAttente() {
   const enAttente = un(
     `SELECT COUNT(*) AS n FROM reponse_commentaire
-      WHERE statut = 'ARepondre' AND date_commentaire < datetime('now', '-1 day')`,
+      WHERE statut = 'ARepondre' AND date_commentaire < datetime('now', '-1 day') AND compte_id = ?`,
+    exigerCompte(),
   )?.n;
   if (enAttente > 0) {
     notifier({

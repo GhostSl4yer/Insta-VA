@@ -5,7 +5,23 @@ import { dateDansFuseau } from '../utils/temps.js';
 import { CLASSES, RELATIONS, ENUMERATIONS, EXTENSIONS, FLUX } from '../donnees/diagramme.js';
 import { REGLES, OBJECTIF, PAYS_AUTORISES, ETAPES_FLUX } from '../../public/shared/enums.js';
 import * as moteur from '../domaine/moteur.js';
-import { comptePublic, configurerManuellement, reinitialiserCycle, archiverDonnees, recupererStatistiques } from '../domaine/compte.js';
+import {
+  comptePublic,
+  configurerManuellement,
+  reinitialiserCycle,
+  archiverDonnees,
+  recupererStatistiques,
+  listerComptes,
+  compteParId,
+  creerCompte,
+  majCompte,
+  supprimerCompte,
+  importerComptes,
+  compterComptes,
+  compterComptesActifs,
+  etatCompte,
+} from '../domaine/compte.js';
+import { resoudreDossiersDrive } from '../domaine/drive.js';
 import { agentCourant, configurerProfil } from '../domaine/agent.js';
 import { obtenirParametres, configurerParametres } from '../domaine/audience.js';
 import {
@@ -84,6 +100,57 @@ const nombre = (url, cle, defaut) => {
   const valeur = Number(brut);
   return Number.isFinite(valeur) ? valeur : defaut;
 };
+
+/* ───────────── comptes (multi-comptes) ───────────── */
+route('GET', /^\/api\/comptes$/, () => ({
+  comptes: listerComptes(),
+  total: compterComptes(),
+  actifs: compterComptesActifs(),
+}));
+
+route('POST', /^\/api\/comptes$/, async (req) => {
+  const corps = await lireJson(req);
+  return { compte: creerCompte(corps), comptes: listerComptes() };
+});
+
+route('PUT', /^\/api\/comptes\/([^/]+)$/, async (req, res, [id]) => ({
+  compte: majCompte(id, await lireJson(req)),
+}));
+
+route('DELETE', /^\/api\/comptes\/([^/]+)$/, (req, res, [id]) => ({
+  supprime: supprimerCompte(id),
+  comptes: listerComptes(),
+}));
+
+route('POST', /^\/api\/comptes\/import$/, async (req) => {
+  const corps = await lireJson(req);
+  return importerComptes(corps.contenu || corps.texte || '');
+});
+
+/** Sélectionne le compte courant : cookie lu par toutes les requêtes suivantes. */
+route('POST', /^\/api\/comptes\/([^/]+)\/selectionner$/, (req, res, [id]) => {
+  const compte = compteParId(id);
+  if (!compte) throw new ErreurHttp(404, 'Compte introuvable');
+  res.setHeader('set-cookie', `instava_compte=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+  return { compte };
+});
+
+/** Vérifie les identifiants Graph du compte (appel réel `me`). */
+route('POST', /^\/api\/comptes\/([^/]+)\/tester$/, async (req, res, [id]) => {
+  const compte = compteParId(id);
+  if (!compte) throw new ErreurHttp(404, 'Compte introuvable');
+  if (!compte.igUserId || !compte.jetonConfigure) {
+    throw new ErreurHttp(400, 'Identifiants Instagram incomplets.');
+  }
+  const { verifierCompte } = await import('../services/instagram.js');
+  const resultat = await verifierCompte();
+  return { compte: resultat };
+});
+
+/** Résout les sous-dossiers du dossier Drive partagé du compte. */
+route('POST', /^\/api\/comptes\/([^/]+)\/drive$/, async (req, res, [id]) => ({
+  dossiers: await resoudreDossiersDrive(id, { forcer: true }),
+}));
 
 /* ───────────── mise en service (production) ───────────── */
 route('GET', /^\/api\/configuration$/, () => etatConfiguration());

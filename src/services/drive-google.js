@@ -26,8 +26,12 @@ class ErreurDrive extends Error {
   }
 }
 
+/**
+ * Les identifiants OAuth sont ceux de l'installation (un seul compte de service
+ * peut accéder à tous les dossiers partagés). Le dossier, lui, dépend du compte
+ * Instagram et arrive par paramètre.
+ */
 export const driveConfigure = () =>
-  Boolean(config.googleDrive.dossierArchive || config.googleDrive.dossiers.Reel || config.googleDrive.dossiers.Story) &&
   Boolean(config.googleDrive.jetonRafraichissement || config.googleDrive.token || config.googleDrive.clientId);
 
 /** Renvoie un jeton d'accès valide, en le renouvelant si nécessaire. */
@@ -108,6 +112,19 @@ export async function listerFichiers(dossierId) {
   return fichiers;
 }
 
+/** Liste les sous-dossiers d'un dossier (pour retrouver Reels/Stories/etc.). */
+export async function listerDossiers(dossierId) {
+  if (!dossierId) return [];
+  const donnees = await appel('/files', {
+    params: {
+      q: `'${dossierId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`,
+      fields: 'files(id, name)',
+      pageSize: 200,
+    },
+  });
+  return donnees.files || [];
+}
+
 /** Télécharge un fichier par son identifiant. */
 export async function telechargerFichier(fichierId) {
   return appel(`/files/${encodeURIComponent(fichierId)}`, { params: { alt: 'media' }, brut: true });
@@ -126,6 +143,19 @@ export async function deplacerFichier(fichierId, { depuis, vers }) {
     params,
   });
   return { deplace: true, parents: donnees.parents };
+}
+
+/** Crée un dossier (utilisé pour Archive/ quand il manque). */
+export async function creerDossier({ nom, parentId }) {
+  return appel('/files', {
+    methode: 'POST',
+    corps: {
+      name: nom,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: parentId ? [parentId] : undefined,
+    },
+    params: { fields: 'id, name' },
+  });
 }
 
 /** Informations d'un fichier (nom, taille, type MIME). */
