@@ -53,6 +53,15 @@ import {
 import { listerJournal, listerNotifications, marquerNotificationLue, marquerToutesLues, compterNotificationsNonLues } from '../domaine/journal.js';
 import { listerAnomalies, resoudreAnomalie, prendreEnCharge } from '../domaine/anomalies.js';
 import { listerVeille, collecterVeille, marquerVeilleTraitee } from '../domaine/veille.js';
+import {
+  etatConfiguration,
+  enregistrerCompte,
+  enregistrerAgent,
+  enregistrerIdentifiantsGraph,
+  oublierIdentifiantsGraph,
+  finaliserConfiguration,
+  identifiantsGraph,
+} from '../domaine/configuration.js';
 
 const routes = [];
 const route = (methode, motif, gestionnaire) => routes.push({ methode, motif, gestionnaire });
@@ -63,6 +72,35 @@ const nombre = (url, cle, defaut) => {
   const valeur = Number(brut);
   return Number.isFinite(valeur) ? valeur : defaut;
 };
+
+/* ───────────── mise en service (production) ───────────── */
+route('GET', /^\/api\/configuration$/, () => etatConfiguration());
+
+route('POST', /^\/api\/configuration\/compte$/, async (req) => {
+  const compte = enregistrerCompte(await lireJson(req));
+  return { compte, configuration: etatConfiguration() };
+});
+
+route('POST', /^\/api\/configuration\/agent$/, async (req) => {
+  const agent = enregistrerAgent(await lireJson(req));
+  return { agent, configuration: etatConfiguration() };
+});
+
+route('POST', /^\/api\/configuration\/graph$/, async (req) => ({
+  identifiants: enregistrerIdentifiantsGraph(await lireJson(req)),
+  configuration: etatConfiguration(),
+}));
+
+route('DELETE', /^\/api\/configuration\/graph$/, () => {
+  oublierIdentifiantsGraph();
+  return { identifiants: identifiantsGraph(), configuration: etatConfiguration() };
+});
+
+route('POST', /^\/api\/configuration\/finaliser$/, async () => {
+  const configuration = finaliserConfiguration();
+  const etat = await moteur.demarrerMoteur({ silencieux: true });
+  return { configuration, etat };
+});
 
 /* ───────────── état & pilotage ───────────── */
 route('GET', /^\/api\/sante$/, () => ({ statut: 'ok', version: config.version, mode: config.modeInstagram, heure: new Date().toISOString() }));
@@ -194,30 +232,40 @@ route('DELETE', /^\/api\/contenus\/([^/]+)$/, (req, res, [id]) => {
 });
 
 /* ───────────── interactions & cibles ───────────── */
-route('GET', /^\/api\/interactions$/, (req, res, params, url) => ({
-  interactions: listerInteractions({
-    type: q(url, 'type'),
-    sens: q(url, 'sens'),
-    pays: q(url, 'pays'),
-    date: q(url, 'date'),
-    limite: nombre(url, 'limite', 150),
-  }),
-  statistiques: statistiquesInteractions({ date: q(url, 'date') }),
-}));
+route('GET', /^\/api\/interactions$/, (req, res, params, url) => {
+  if (!config.interactionsActives) {
+    return { interactions: [], desactive: true, statistiques: { parType: {}, parPays: [], sortantes: 0, entrantes: 0, total: 0 } };
+  }
+  return {
+    interactions: listerInteractions({
+      type: q(url, 'type'),
+      sens: q(url, 'sens'),
+      pays: q(url, 'pays'),
+      date: q(url, 'date'),
+      limite: nombre(url, 'limite', 150),
+    }),
+    statistiques: statistiquesInteractions({ date: q(url, 'date') }),
+  };
+});
 route('GET', /^\/api\/abonnements$/, () => ({ abonnements: listerAbonnements({ limite: 200 }) }));
 route('GET', /^\/api\/abonnements\/([^/]+)\/statut$/, (req, res, [id]) => verifierStatutAbonnement(id));
-route('GET', /^\/api\/cibles$/, (req, res, params, url) => ({
-  cibles: listerCibles({
-    statut: q(url, 'statut'),
-    pays: q(url, 'pays'),
-    reference: q(url, 'reference'),
-    recherche: q(url, 'recherche'),
-    tri: q(url, 'tri', 'score'),
-    limite: nombre(url, 'limite', 120),
-  }),
-  statistiques: statistiquesCibles(),
-  parStatut: compterCiblesParStatut(),
-}));
+route('GET', /^\/api\/cibles$/, (req, res, params, url) => {
+  if (!config.interactionsActives) {
+    return { cibles: [], desactive: true, statistiques: { total: 0, parStatut: {}, parZone: {} } };
+  }
+  return {
+    cibles: listerCibles({
+      statut: q(url, 'statut'),
+      pays: q(url, 'pays'),
+      reference: q(url, 'reference'),
+      recherche: q(url, 'recherche'),
+      tri: q(url, 'tri', 'score'),
+      limite: nombre(url, 'limite', 120),
+    }),
+    statistiques: statistiquesCibles(),
+    parStatut: compterCiblesParStatut(),
+  };
+});
 route('POST', /^\/api\/cibles\/analyser-tout$/, () => {
   const resultats = analyserToutesCibles();
   return { analyses: resultats.length, statistiques: statistiquesCibles(), parStatut: compterCiblesParStatut() };
@@ -228,6 +276,7 @@ route('POST', /^\/api\/cibles\/([^/]+)\/analyser$/, (req, res, [id]) => {
   return { cible };
 });
 route('POST', /^\/api\/cibles\/([^/]+)\/suivre$/, (req, res, [id]) => {
+  if (!config.interactionsActives) throw new ErreurHttp(403, 'Module interactions désactivé en production');
   const resultat = suivreCible(id);
   if (!resultat) throw new ErreurHttp(404, 'Cible introuvable');
   return resultat;

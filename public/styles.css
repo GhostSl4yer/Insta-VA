@@ -622,6 +622,15 @@ a:hover { border-bottom-color: var(--encre); }
 }
 .dropzone.survol { border-color: var(--encre); background: var(--surface-2); color: var(--encre); }
 
+.etape-num {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid var(--trait-fort);
+  font-family: var(--mono); font-size: 10px; color: var(--muet);
+  flex: 0 0 20px;
+}
+.etape-num.fait { background: var(--ok); border-color: var(--ok); color: var(--fond); }
+
 .pastille-avatar {
   display: grid; place-items: center;
   background: var(--encre); color: var(--fond);

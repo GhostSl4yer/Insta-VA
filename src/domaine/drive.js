@@ -90,10 +90,49 @@ function ecrireContenu({ concept, numeroJour, cycleId, compte, date, type }) {
 }
 
 /**
+ * Production : affecte la journée aux contenus fournis par le responsable.
+ * Aucun média n'est fabriqué — on ne fait que répartir le stock disponible.
+ */
+export function attribuerJourPrevu(date) {
+  const quotas = { Story: 3, Reel: 2, UnePleine: [1, 3, 5].includes(jourSemaine(date)) ? 1 : 0 };
+  let attribues = 0;
+  for (const [type, quota] of Object.entries(quotas)) {
+    if (!quota) continue;
+    const dejaPrevus = un(
+      `SELECT COUNT(*) AS n FROM contenu_drive WHERE jour_prevu = ? AND type = ?`,
+      date,
+      type,
+    )?.n ?? 0;
+    const besoin = Math.max(0, quota - dejaPrevus);
+    if (!besoin) continue;
+    const disponibles = tous(
+      `SELECT id FROM contenu_drive
+        WHERE jour_prevu IS NULL AND type = ? AND statut IN ('Planifie','Telecharge')
+        ORDER BY date_ajout LIMIT ?`,
+      type,
+      besoin,
+    );
+    for (const ligne of disponibles) {
+      executer('UPDATE contenu_drive SET jour_prevu = ? WHERE id = ?', date, ligne.id);
+      attribues += 1;
+    }
+  }
+  if (attribues) {
+    journaliser(`${attribues} contenu(s) fourni(s) affecté(s) à la journée du ${date}.`, {
+      categorie: 'drive',
+      jour: date,
+    });
+  }
+  return { crees: 0, attribues, existants: 0 };
+}
+
+/**
  * Génère les contenus d'une journée : 3 stories, 1 Reel, une publication « une »
  * le lundi/mercredi/vendredi et un second Reel court le mercredi/samedi.
+ * En production, aucun contenu n'est généré : on répartit le stock fourni.
  */
 export function plannifierJournee({ cycleId, compte, date, numeroJour = 1 }) {
+  if (config.production) return attribuerJourPrevu(date);
   const existants = un('SELECT COUNT(*) AS n FROM contenu_drive WHERE jour_prevu = ?', date)?.n ?? 0;
   if (existants > 0) return { crees: 0, existants };
 
@@ -153,6 +192,8 @@ export function plannifierCycle({ cycleId, compte, dateDebut, jours = config.dur
 export function assurerPhotoProfil(compte) {
   const existe = un(`SELECT * FROM contenu_drive WHERE type = 'PhotoProfil' LIMIT 1`);
   if (existe) return mapper(existe);
+  // Production : la photo de profil est fournie, jamais générée.
+  if (config.production) return null;
   const nom = `profil-${compte.username}.svg`;
   const relatif = path.posix.join('photos', nom);
   const absolu = path.join(config.dossierDrive, relatif);

@@ -1,0 +1,19 @@
+# HTTPS automatique (Let's Encrypt) + en-têtes de sécurité.
+{$DOMAINE} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# Le flux SSE ne doit pas être mis en tampon.
+	@flux path /api/stream
+	reverse_proxy @flux app:3000 {
+		flush_interval -1
+	}
+
+	reverse_proxy app:3000
+}

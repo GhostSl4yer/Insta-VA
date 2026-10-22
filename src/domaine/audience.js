@@ -19,9 +19,24 @@ function mapper(ligne) {
   };
 }
 
+const AUDIENCE_PAR_DEFAUT = Object.freeze({
+  id: null,
+  agentId: null,
+  compteId: null,
+  ageMinimum: 25,
+  paysAutorises: ['USA', 'France', 'RoyaumeUni', 'Allemagne', 'Pologne', 'AutresPays'],
+  paysExclus: [],
+  genre: 'NonPrecise',
+  createdLe: null,
+  majLe: null,
+  parDefaut: true,
+});
+
 export function assurerParametres({ agentId = null, compteId = null } = {}) {
   const existant = un('SELECT * FROM parametres_audience LIMIT 1');
   if (existant) return mapper(existant);
+  // Production : l'audience est fournie par le responsable, pas créée d'office.
+  if (config.production) return { ...AUDIENCE_PAR_DEFAUT };
   const id = uuid();
   const date = new Date().toISOString();
   const pays = ['USA', 'France', 'RoyaumeUni', 'Allemagne', 'Pologne', 'AutresPays'];
@@ -45,7 +60,7 @@ export function assurerParametres({ agentId = null, compteId = null } = {}) {
 }
 
 export function obtenirParametres() {
-  return mapper(un('SELECT * FROM parametres_audience LIMIT 1')) || assurerParametres();
+  return mapper(un('SELECT * FROM parametres_audience LIMIT 1')) || assurerParametres() || { ...AUDIENCE_PAR_DEFAUT };
 }
 
 /** `appliquer()` du diagramme : valide et enregistre les paramètres. */
@@ -62,15 +77,31 @@ export function configurerParametres(payload = {}) {
   const ageMinimum = Math.max(OBJECTIF.ageMinimum, Number(payload.ageMinimum ?? actuel.ageMinimum) || OBJECTIF.ageMinimum);
   const genre = GENRES.includes(payload.genre) ? payload.genre : actuel.genre;
   const paysExclus = Array.isArray(payload.paysExclus) ? payload.paysExclus.map(String).slice(0, 20) : actuel.paysExclus;
-  executer(
-    `UPDATE parametres_audience SET age_minimum = ?, pays_autorises = ?, pays_exclus = ?, genre = ?, maj_le = ? WHERE id = ?`,
-    ageMinimum,
-    JSON.stringify(pays),
-    JSON.stringify(paysExclus),
-    genre,
-    new Date().toISOString(),
-    actuel.id,
-  );
+  const maintenant = new Date().toISOString();
+  if (actuel.id) {
+    executer(
+      `UPDATE parametres_audience SET age_minimum = ?, pays_autorises = ?, pays_exclus = ?, genre = ?, maj_le = ? WHERE id = ?`,
+      ageMinimum,
+      JSON.stringify(pays),
+      JSON.stringify(paysExclus),
+      genre,
+      maintenant,
+      actuel.id,
+    );
+  } else {
+    executer(
+      `INSERT INTO parametres_audience
+        (id, agent_id, compte_id, age_minimum, pays_autorises, pays_exclus, genre, created_le, maj_le)
+       VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+      uuid(),
+      ageMinimum,
+      JSON.stringify(pays),
+      JSON.stringify(paysExclus),
+      genre,
+      maintenant,
+      maintenant,
+    );
+  }
   journaliser('Paramètres d’audience mis à jour.', {
     categorie: 'audience',
     donnees: { ageMinimum, pays, genre },

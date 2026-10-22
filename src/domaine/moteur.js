@@ -33,6 +33,7 @@ import { genererRapport, genererRapportHebdomadaire, genererBilanFinCycle } from
 import { collecterVeille } from './veille.js';
 import { detecterAnomalie, compterAnomaliesOuvertes, listerAnomalies } from './anomalies.js';
 import { journaliser, notifier, compterNotificationsNonLues, listerJournal } from './journal.js';
+import { etatConfiguration, moteurAutorise } from './configuration.js';
 
 const PRIORITE = {
   session_debut: 0,
@@ -249,13 +250,16 @@ function construirePlan({ cycle, date, publications }) {
     });
   }
 
-  for (let minute = 16 * 60 + 25; minute <= 23 * 60 + 45; minute += 9) {
-    pousser({
-      minute,
-      type: 'interactions',
-      volume: alea.entier(1, 2),
-      libelle: 'Lot d’interactions ciblées',
-    });
+  // Interactions désactivées en production : aucun lot n'est planifié.
+  if (config.interactionsActives) {
+    for (let minute = 16 * 60 + 25; minute <= 23 * 60 + 45; minute += 9) {
+      pousser({
+        minute,
+        type: 'interactions',
+        volume: alea.entier(1, 2),
+        libelle: 'Lot d’interactions ciblées',
+      });
+    }
   }
   for (let minute = 16 * 60 + 36; minute <= 23 * 60 + 30; minute += 22) {
     pousser({
@@ -385,6 +389,10 @@ async function executerTache(tache) {
         break;
       }
       case 'interactions': {
+        if (!config.interactionsActives) {
+          tache.libelle = 'Interactions désactivées';
+          break;
+        }
         const session = sessionPourMinute(etat.minuteJour);
         const resultats = executerLotInteractions({
           date: etat.dateJour,
@@ -584,6 +592,15 @@ export function estDemarre() {
 }
 
 export async function demarrerMoteur({ silencieux = false } = {}) {
+  // Production : le moteur refuse de tourner tant que les données ne sont pas fournies.
+  if (!moteurAutorise()) {
+    etat.horloge = 'arrete';
+    journaliser('Démarrage refusé : la configuration de production est incomplète.', {
+      niveau: 'alerte',
+      categorie: 'systeme',
+    });
+    return etatPublic();
+  }
   assurerAgent();
   assurerCompte();
   assurerParametres();
@@ -874,6 +891,10 @@ export function etatPublic() {
   return {
     version: config.version,
     mode: config.modeInstagram,
+    environnement: config.environnement,
+    production: config.production,
+    interactionsActives: config.interactionsActives,
+    configuration: etatConfiguration(),
     fuseau: config.fuseau,
     horloge: {
       etat: etat.horloge,

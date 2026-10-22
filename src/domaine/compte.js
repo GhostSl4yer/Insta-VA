@@ -31,6 +31,8 @@ export function mapperCompte(ligne) {
 export function assurerCompte() {
   const existant = un('SELECT * FROM compte_instagram LIMIT 1');
   if (existant) return mapperCompte(existant);
+  // En production, le compte est fourni par le responsable : rien n'est inventé.
+  if (config.production) return null;
   const id = uuid();
   const date = new Date().toISOString();
   const avatar = {

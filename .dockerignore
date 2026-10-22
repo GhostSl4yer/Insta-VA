@@ -1,0 +1,14 @@
+.git
+.gitignore
+data
+node_modules
+npm-debug.log*
+*.log
+.env
+.env.*
+!.env.production.example
+docs
+tests
+deploy
+README.md
+LICENSE

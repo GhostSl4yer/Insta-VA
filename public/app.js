@@ -13,6 +13,7 @@ import vueJournal from './views/journal.js';
 import vueAnomalies from './views/anomalies.js';
 import vueArchitecture from './views/architecture.js';
 import vueParametres from './views/parametres.js';
+import vueInstallation from './views/installation.js';
 
 /* ─────────────────────────── icônes ─────────────────────────── */
 
@@ -58,6 +59,7 @@ const icone = (nom, taille = 17) =>
 /* ─────────────────────────── navigation ─────────────────────────── */
 
 const ROUTES = [
+  { cle: 'installation', chemin: '/installation', titre: 'Mise en service', vue: vueInstallation, icone: 'parametres', horsNav: true },
   { section: 'Pilotage' },
   { cle: 'pilotage', chemin: '/', titre: 'Tableau de bord', vue: vuePilotage, icone: 'pilotage' },
   { cle: 'cycle', chemin: '/cycle', titre: 'Cycle & journées', vue: vueCycle, icone: 'cycle' },
@@ -65,7 +67,7 @@ const ROUTES = [
   { section: 'Contenus' },
   { cle: 'drive', chemin: '/drive', titre: 'Drive', vue: vueDrive, icone: 'drive' },
   { cle: 'publications', chemin: '/publications', titre: 'Publications', vue: vuePublications, icone: 'publications' },
-  { section: 'Audience' },
+  { section: 'Audience', condition: 'interactions' },
   { cle: 'cibles', chemin: '/cibles', titre: 'Cibles scorées', vue: vueCibles, icone: 'cibles' },
   { cle: 'interactions', chemin: '/interactions', titre: 'Interactions', vue: vueInteractions, icone: 'interactions' },
   { cle: 'abonnements', chemin: '/abonnements', titre: 'Abonnements', vue: vueAbonnements, icone: 'abonnements' },
@@ -135,9 +137,35 @@ async function actionSure(promesse, messageSucces, options = {}) {
 
 /* ─────────────────────────── rendu shell ─────────────────────────── */
 
+function routesVisibles() {
+  const configuration = ctx.etat?.configuration;
+  const interactions = ctx.etat?.interactionsActives !== false;
+  const sortie = [];
+  let sectionEnAttente = null;
+  for (const route of ROUTES) {
+    if (route.section) {
+      if (route.condition === 'interactions' && !interactions) continue;
+      sectionEnAttente = route.section;
+      continue;
+    }
+    if (route.cle === 'installation') {
+      if (!configuration?.requise || configuration?.complete) continue;
+      sortie.push(route);
+      continue;
+    }
+    if (!interactions && ['cibles', 'interactions', 'abonnements'].includes(route.cle)) continue;
+    if (sectionEnAttente) {
+      sortie.push({ section: sectionEnAttente });
+      sectionEnAttente = null;
+    }
+    sortie.push(route);
+  }
+  return sortie;
+}
+
 function rendreNav() {
   const nav = document.getElementById('nav');
-  nav.innerHTML = ROUTES.map((route) => {
+  nav.innerHTML = routesVisibles().map((route) => {
     if (route.section) return `<div class="nav-titre">${route.section}</div>`;
     const alertes = route.cle === 'anomalies' ? ctx.etat?.compteurs?.anomalies : 0;
     const notifs = route.cle === 'journal' ? ctx.etat?.compteurs?.notifications : 0;
@@ -235,6 +263,11 @@ let jetonRendu = 0;
 
 async function rendre() {
   const { route, params } = analyserRoute();
+  const configuration = ctx.etat?.configuration;
+  if (configuration?.requise && !configuration.complete && route.cle !== 'installation') {
+    window.location.hash = '#/installation';
+    return;
+  }
   ctx.route = route.cle;
   ctx.params = params;
   ctx.vue = route.vue;

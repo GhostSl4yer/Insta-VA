@@ -20,6 +20,7 @@ function mapper(ligne) {
 export function assurerAgent() {
   const existant = un('SELECT * FROM agent LIMIT 1');
   if (existant) return mapper(existant);
+  if (config.production) return null;
   const id = uuid();
   const configuration = {
     notifications: { journal: true, anomalies: true, rapportQuotidien: true },
