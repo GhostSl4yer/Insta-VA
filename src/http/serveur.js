@@ -10,6 +10,8 @@ import {
 } from './auth.js';
 import { pageConnexion, pageErreur } from './pages.js';
 import { enregistrerClic } from '../domaine/liens.js';
+import { executerPour } from '../domaine/contexte.js';
+import { premierCompte, compteParId } from '../domaine/compte.js';
 
 const clientsSse = new Set();
 let diffusion = null;
@@ -146,6 +148,36 @@ async function traiterConnexion(req, res) {
   }
 }
 
+/**
+ * Compte demandé par la requête : cookie de sélection, en-tête explicite, ou
+ * premier compte actif. La portée ouvre ensuite toutes les requêtes métier.
+ */
+function compteDemande(req, url) {
+  const cookies = lireCookies(req);
+  const candidats = [
+    url.searchParams.get('compte'),
+    req.headers['x-compte-id'],
+    cookies.instava_compte,
+  ].filter(Boolean);
+  for (const candidat of candidats) {
+    if (compteParId(String(candidat))) return String(candidat);
+  }
+  return premierCompte()?.id || null;
+}
+
+function lireCookies(req) {
+  return Object.fromEntries(
+    String(req.headers.cookie || '')
+      .split(';')
+      .map((partie) => partie.trim())
+      .filter(Boolean)
+      .map((partie) => {
+        const index = partie.indexOf('=');
+        return index < 0 ? [partie, ''] : [partie.slice(0, index), decodeURIComponent(partie.slice(index + 1))];
+      }),
+  );
+}
+
 function creerServeur() {
   demarrerDiffusion();
   const serveur = http.createServer(async (req, res) => {
@@ -249,13 +281,32 @@ function creerServeur() {
       }
 
       if (chemin.startsWith('/api/')) {
-        await routesApi(req, res, chemin, url);
+        // La gestion des comptes doit rester accessible avant toute sélection
+        // (sinon impossible de créer le premier compte).
+        if (chemin === '/api/comptes' || chemin.startsWith('/api/comptes/')) {
+          await routesApi(req, res, chemin, url);
+          return;
+        }
+        const compteId = compteDemande(req, url);
+        if (!compteId) {
+          envoyerJson(res, 409, { erreur: 'Aucun compte Instagram configuré.' });
+          return;
+        }
+        await executerPour(compteId, () => routesApi(req, res, chemin, url));
         return;
       }
 
       if (chemin.startsWith('/media/')) {
-        const relatif = chemin.slice('/media/'.length);
-        const servi = servirFichier(res, config.dossierDrive, relatif, { cacheControle: 'public, max-age=3600' });
+        // /media/<compte>/<chemin relatif> : chaque compte a son dossier de médias.
+        const reste = chemin.slice('/media/'.length);
+        const [compteId, ...morceaux] = reste.split('/');
+        if (!compteId || !compteParId(compteId)) {
+          envoyerTexte(res, 404, 'Média introuvable');
+          return;
+        }
+        const servi = servirFichier(res, config.dossierMediasCompte(compteId), morceaux.join('/'), {
+          cacheControle: 'public, max-age=3600',
+        });
         if (!servi) envoyerTexte(res, 404, 'Média introuvable');
         return;
       }

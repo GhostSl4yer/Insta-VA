@@ -3,12 +3,13 @@ import { journaliser } from '../domaine/journal.js';
 import { identifiantsGraph } from '../domaine/configuration.js';
 
 /**
- * Passerelle Instagram.
- * - `simulation` : aucune requête réseau, tout est simulé (100 % autonome).
- * - `graph` : publication réelle via l'API Instagram Graph (nécessite un compte
- *   professionnel, un token et des médias accessibles publiquement en HTTPS).
+ * Passerelle Instagram — mode live uniquement.
+ *
+ * Aucune simulation : sans identifiants Graph valides, l'appel échoue et
+ * l'erreur remonte au moteur (publication en échec, anomalie visible). Les
+ * identifiants sont ceux du compte courant.
  */
-export const modeSimulation = () => config.modeInstagram !== 'graph';
+export const modeSimulation = () => false;
 
 async function appelGraph(chemin, params = {}, methode = 'GET') {
   const identifiants = identifiantsGraph();
@@ -33,16 +34,8 @@ async function appelGraph(chemin, params = {}, methode = 'GET') {
   return donnees;
 }
 
-/** Publie un média. En simulation, renvoie un identifiant et un permalien fictifs. */
+/** Publie un média réel via l'API Instagram Graph. */
 export async function publierMedia({ type, urlMedia, legende, miniatureUrl }) {
-  if (modeSimulation()) {
-    const id = `sim_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    return {
-      id,
-      permalink: `https://www.instagram.com/p/${id.slice(4, 15)}/`,
-      simule: true,
-    };
-  }
   const estVideo = type === 'Reel';
   const champs = {
     media_type: estVideo ? 'REELS' : 'IMAGE',
@@ -62,15 +55,19 @@ export async function publierMedia({ type, urlMedia, legende, miniatureUrl }) {
   return { id: statutPublication.id, permalink: infos.permalink, simule: false };
 }
 
-export async function verifierStatutMedia(mediaId) {
-  if (modeSimulation()) return { statut: 'FINISHED', simule: true };
-  const infos = await appelGraph(`/${mediaId}`, { fields: 'status_code' });
-  return { statut: infos.status_code, simule: false };
+/** Vérifie le jeton du compte courant (`GET /me`). */
+export async function verifierCompte() {
+  const infos = await appelGraph('/me', { fields: 'id,username,account_type' });
+  return { id: infos.id, username: infos.username, type: infos.account_type };
 }
 
-/** Insights agrégés (mode Graph). En simulation, les statistiques sont calculées localement. */
+export async function verifierStatutMedia(mediaId) {
+  const infos = await appelGraph(`/${mediaId}`, { fields: 'status_code' });
+  return { statut: infos.status_code };
+}
+
+/** Insights agrégés du compte. */
 export async function recupererInsights({ metrique = 'impressions,reach', periode = 'day' } = {}) {
-  if (modeSimulation()) return null;
   try {
     const infos = await appelGraph(`/${identifiantsGraph().userId}/insights`, { metric: metrique, period: periode });
     return infos.data;
@@ -80,12 +77,7 @@ export async function recupererInsights({ metrique = 'impressions,reach', period
   }
 }
 
-export async function suivreUtilisateur(userId) {
-  if (modeSimulation()) return { ok: true, simule: true };
-  try {
-    await appelGraph(`/${userId}/follow`, {}, 'POST');
-    return { ok: true };
-  } catch (erreur) {
-    return { ok: false, erreur: erreur.message };
-  }
-}
+/**
+ * Suivre un compte n'est pas exposé par l'API Instagram : la fonction reste
+ * absente volontairement. Aucun contournement n'est implémenté.
+ */

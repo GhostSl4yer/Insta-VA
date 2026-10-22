@@ -3,280 +3,145 @@ import path from 'node:path';
 import { executer, tous, un } from '../db.js';
 import { config } from '../config.js';
 import { uuid } from '../utils/ids.js';
-import { ajouterJours, jourSemaine } from '../utils/temps.js';
-import { slug } from '../utils/texte.js';
-import { creerAlea } from '../utils/alea.js';
-import { CONCEPTS, THEMES } from '../donnees/concepts.js';
-import { composerLegende, texteStory } from '../donnees/legende.js';
 import { journaliser } from './journal.js';
-import { ecrireVisuel, choisirPalette } from './visuels.js';
+import { exigerCompte, compteIdCourant } from './contexte.js';
+import { compteParId, marquerSync, enregistrerErreurCompte } from './compte.js';
 import {
   driveConfigure,
   listerFichiers,
+  listerDossiers,
   telechargerFichier,
   deplacerFichier,
 } from '../services/drive-google.js';
 
-const DOSSIERS = { Reel: 'reels', Story: 'stories', UnePleine: 'livre', PhotoProfil: 'photos' };
-const TAGS_THEME = { fitness: '#fitness', nutrition: '#nutrition', running: '#running', bienetre: '#bienetre', ia: '#IA' };
+/**
+ * Contenus d'un compte.
+ *
+ * Source : le dossier Drive partagé du compte (lien collé dans la fiche du
+ * compte). Le dossier contient quatre sous-dossiers — Reels, Stories,
+ * UnePleine, PhotoProfil — plus Archive. Après publication confirmée, le
+ * fichier est déplacé vers Archive (jamais supprimé).
+ *
+ * Aucun média n'est fabriqué : si le dossier est vide, le planning est vide.
+ */
 
-function mapper(ligne) {
+const SOUS_DOSSIERS = {
+  Reel: ['reels', 'reel'],
+  Story: ['stories', 'story'],
+  UnePleine: ['unepleine', 'une pleine', 'livre', 'unes'],
+  PhotoProfil: ['photoprofil', 'photo de profil', 'profil', 'photos'],
+  Archive: ['archive', 'archives'],
+};
+
+const PAR_TYPE = { Reel: 'reels', Story: 'stories', UnePleine: 'livre', PhotoProfil: 'photos' };
+const EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.m4v']);
+const TAILLE_MAX = 200 * 1024 * 1024;
+
+const nettoyer = (nom) =>
+  String(nom || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+export function mapper(ligne) {
   if (!ligne) return null;
-  const theme = ligne.theme || 'fitness';
   return {
     id: ligne.id,
+    compteId: ligne.compte_id,
     cycleId: ligne.cycle_id,
     type: ligne.type,
-    cheminFichier: ligne.chemin_fichier,
+    chemin: ligne.chemin_fichier,
     cheminPublic: ligne.chemin_public,
-    visibilite: ligne.visibilite,
+    url: urlMedia(ligne.chemin_public),
     description: ligne.description,
     dateAjout: ligne.date_ajout,
     datePublication: ligne.date_publication,
     statut: ligne.statut,
     jourPrevu: ligne.jour_prevu,
     format: ligne.format,
-    theme,
-    themeLibelle: THEMES[theme]?.libelle || theme,
-    emoji: THEMES[theme]?.emoji || '✨',
-    miniature: ligne.miniature,
+    theme: ligne.theme,
+    taille: ligne.taille ?? 0,
     source: ligne.source,
-    driveFileId: ligne.drive_file_id || null,
-    driveDossierId: ligne.drive_dossier_id || null,
-    image: urlMedia(ligne.chemin_public),
+    driveFileId: ligne.drive_file_id,
+    driveDossierId: ligne.drive_dossier_id,
   };
 }
 
-const conceptsParType = (type) => CONCEPTS.filter((c) => c.format === type);
-
-function ecrireContenu({ concept, numeroJour, cycleId, compte, date, type }) {
-  const graine = Math.abs(
-    (date.split('-').reduce((a, b) => a * 31 + Number(b), 7) * 97 + numeroJour * 13 + type.length * 7) % 100000,
-  );
-  const palette = choisirPalette(`${concept.id}-${date}-${numeroJour}-${type}`);
-  const couleur = palette.fond[0].replace('#', '');
-  const dossier = DOSSIERS[type];
-  const nom = `${date}-j${String(numeroJour).padStart(2, '0')}-${type.toLowerCase()}-${slug(concept.id)}-${couleur}.svg`;
-  const cheminRelatif = path.posix.join(dossier, nom);
-  const absolu = path.join(config.dossierDrive, cheminRelatif);
-  ecrireVisuel({
-    dossier: path.dirname(absolu),
-    nomFichier: path.basename(absolu),
-    format: type,
-    concept: {
-      ...concept,
-      themeLabel: TAGS_THEME[concept.theme] || '#maya',
-      punchline: `Jour ${numeroJour} · ${THEMES[concept.theme]?.libelle || ''}`,
-    },
-    avatar: compte.avatar,
-    username: compte.username,
-  });
-  const legende = composerLegende(concept, { graine, jour: numeroJour, type });
-  const description =
-    type === 'Story'
-      ? `${legende.split('\n')[0]}\n\n${concept.accroche.replace(/\n/g, ' ')} · ${THEMES[concept.theme]?.emoji || ''}\n\n${
-          texteStory(concept, graine).libelle || ''
-        }`
-      : legende;
-  executer(
-    `INSERT INTO contenu_drive
-      (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
-       date_publication, statut, jour_prevu, format, theme, miniature, source)
-     VALUES (?, ?, ?, ?, ?, 'prive', ?, ?, NULL, 'Planifie', ?, ?, ?, ?, 'genere')`,
-    uuid(),
-    cycleId,
-    type,
-    absolu,
-    cheminRelatif,
-    description,
-    new Date().toISOString(),
-    date,
-    type,
-    concept.theme,
-    cheminRelatif,
-  );
-}
+/* ─────────────────────────── dossiers Drive ─────────────────────────── */
 
 /**
- * Production : affecte la journée aux contenus fournis par le responsable.
- * Aucun média n'est fabriqué — on ne fait que répartir le stock disponible.
+ * Retrouve les sous-dossiers du dossier partagé du compte. Le résultat est mis
+ * en cache sur la fiche du compte : les noms ne changent pas en exploitation.
  */
-export function attribuerJourPrevu(date) {
-  const quotas = { Story: 3, Reel: 2, UnePleine: [1, 3, 5].includes(jourSemaine(date)) ? 1 : 0 };
-  let attribues = 0;
-  for (const [type, quota] of Object.entries(quotas)) {
-    if (!quota) continue;
-    const dejaPrevus = un(
-      `SELECT COUNT(*) AS n FROM contenu_drive WHERE jour_prevu = ? AND type = ?`,
-      date,
-      type,
-    )?.n ?? 0;
-    const besoin = Math.max(0, quota - dejaPrevus);
-    if (!besoin) continue;
-    const disponibles = tous(
-      `SELECT id FROM contenu_drive
-        WHERE jour_prevu IS NULL AND type = ? AND statut IN ('Planifie','Telecharge')
-        ORDER BY date_ajout LIMIT ?`,
-      type,
-      besoin,
-    );
-    for (const ligne of disponibles) {
-      executer('UPDATE contenu_drive SET jour_prevu = ? WHERE id = ?', date, ligne.id);
-      attribues += 1;
-    }
+export async function resoudreDossiersDrive(compteId = exigerCompte(), { forcer = false } = {}) {
+  const compte = compteParId(compteId);
+  if (!compte?.driveFolderId) return {};
+  if (!forcer && compte.driveSousDossiers?.Reel) return compte.driveSousDossiers;
+  const enfants = await listerDossiers(compte.driveFolderId);
+  const trouves = {};
+  for (const [type, alias] of Object.entries(SOUS_DOSSIERS)) {
+    const dossier = enfants.find((d) => alias.includes(nettoyer(d.name)));
+    if (dossier) trouves[type] = dossier.id;
   }
-  if (attribues) {
-    journaliser(`${attribues} contenu(s) fourni(s) affecté(s) à la journée du ${date}.`, {
-      categorie: 'drive',
-      jour: date,
-    });
+  if (!trouves.Archive) {
+    // L'archive est créée si elle manque : le fichier publié ne doit jamais rester
+    // dans la file « à publier ».
+    const archive = await creerDossier('Archive', compte.driveFolderId);
+    trouves.Archive = archive.id;
   }
-  return { crees: 0, attribues, existants: 0 };
+  executer('UPDATE compte_instagram SET drive_sous_dossiers = ? WHERE id = ?', JSON.stringify(trouves), compteId);
+  return trouves;
 }
 
-/**
- * Génère les contenus d'une journée : 3 stories, 1 Reel, une publication « une »
- * le lundi/mercredi/vendredi et un second Reel court le mercredi/samedi.
- * En production, aucun contenu n'est généré : on répartit le stock fourni.
- */
-export function plannifierJournee({ cycleId, compte, date, numeroJour = 1 }) {
-  if (config.production) return attribuerJourPrevu(date);
-  const existants = un('SELECT COUNT(*) AS n FROM contenu_drive WHERE jour_prevu = ?', date)?.n ?? 0;
-  if (existants > 0) return { crees: 0, existants };
-
-  const reels = conceptsParType('Reel');
-  const stories = conceptsParType('Story');
-  const unes = conceptsParType('UnePleine');
-  const jourSem = jourSemaine(date);
-  const base = Math.max(0, numeroJour - 1);
-  let crees = 0;
-
-  const prendre = (liste, index) => liste[index % liste.length];
-
-  // Le Reel du jour (forcé sur l'IA 1 jour / 7 pour servir l'objectif final)
-  const conceptReel =
-    numeroJour % 7 === 0 ? reels.find((c) => c.theme === 'ia') || reels[base % reels.length] : prendre(reels, base * 2);
-  ecrireContenu({ concept: conceptReel, numeroJour, cycleId, compte, date, type: 'Reel' });
-  crees += 1;
-
-  for (let i = 0; i < 3; i += 1) {
-    ecrireContenu({ concept: prendre(stories, base * 3 + i), numeroJour, cycleId, compte, date, type: 'Story' });
-    crees += 1;
-  }
-
-  if ([1, 3, 5].includes(jourSem)) {
-    ecrireContenu({ concept: prendre(unes, base), numeroJour, cycleId, compte, date, type: 'UnePleine' });
-    crees += 1;
-  }
-
-  if ([3, 6].includes(jourSem)) {
-    ecrireContenu({ concept: prendre(reels, base * 2 + 1), numeroJour, cycleId, compte, date, type: 'Reel' });
-    crees += 1;
-  }
-
-  journaliser(`${crees} contenu(s) préparé(s) dans le Drive pour le ${date}.`, {
-    categorie: 'drive',
-    jour: date,
-    cycleId,
-  });
-  return { crees, existants: 0 };
+async function creerDossier(nom, parentId) {
+  const { creerDossier: creer } = await import('../services/drive-google.js');
+  return creer({ nom, parentId });
 }
 
-/** Pré-planification d'un cycle complet (utilisé pour l'amorçage ou la relance). */
-export function plannifierCycle({ cycleId, compte, dateDebut, jours = config.dureeCycleJours }) {
-  let crees = 0;
-  for (let j = 1; j <= jours; j += 1) {
-    crees += plannifierJournee({
-      cycleId,
-      compte,
-      date: ajouterJours(dateDebut, j - 1),
-      numeroJour: j,
-    }).crees;
-  }
-  return { crees };
-}
+/* ─────────────────────────── inventaire local ─────────────────────────── */
 
-/** Photo de profil : générée une seule fois, indépendamment du cycle. */
-export function assurerPhotoProfil(compte) {
-  const existe = un(`SELECT * FROM contenu_drive WHERE type = 'PhotoProfil' LIMIT 1`);
-  if (existe) return mapper(existe);
-  // Production : la photo de profil est fournie, jamais générée.
-  if (config.production) return null;
-  const nom = `profil-${compte.username}.svg`;
-  const relatif = path.posix.join('photos', nom);
-  const absolu = path.join(config.dossierDrive, relatif);
-  ecrireVisuel({
-    dossier: path.dirname(absolu),
-    nomFichier: nom,
-    format: 'PhotoProfil',
-    concept: { id: 'profil', titre: 'Portrait avatar', accroche: 'Maya Rivera' },
-    avatar: compte.avatar,
-    username: compte.username,
-  });
-  const id = uuid();
-  executer(
-    `INSERT INTO contenu_drive
-      (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
-       date_publication, statut, jour_prevu, format, theme, miniature, source)
-     VALUES (?, NULL, 'PhotoProfil', ?, ?, 'public', ?, ?, ?, 'Publie', NULL, 'PhotoProfil', 'fitness', ?, 'genere')`,
-    id,
-    absolu,
-    relatif,
-    'Photo de profil générée pour l’avatar IA.',
-    new Date().toISOString(),
-    new Date().toISOString(),
-    relatif,
-  );
-  return mapper(un('SELECT * FROM contenu_drive WHERE id = ?', id));
-}
-
-export function listerContenus({ statut, type, theme, cycleId, limite = 300, recherche } = {}) {
-  const clauses = [];
-  const params = [];
+export function listerContenus({ statut, type, cycleId, limite = 300, recherche } = {}) {
+  const compteId = compteIdCourant() || '';
+  const clauses = ['compte_id = ?'];
+  const params = [compteId];
   if (statut) {
-    const liste = String(statut).split(',');
-    clauses.push(`statut IN (${liste.map(() => '?').join(',')})`);
-    params.push(...liste);
+    clauses.push(`statut IN (${String(statut).split(',').map(() => '?').join(',')})`);
+    params.push(...String(statut).split(','));
   }
   if (type) {
     clauses.push('type = ?');
     params.push(type);
-  }
-  if (theme) {
-    clauses.push('theme = ?');
-    params.push(theme);
   }
   if (cycleId) {
     clauses.push('cycle_id = ?');
     params.push(cycleId);
   }
   if (recherche) {
-    clauses.push('(description LIKE ? OR chemin_public LIKE ?)');
-    params.push(`%${recherche}%`, `%${recherche}%`);
+    clauses.push('description LIKE ?');
+    params.push(`%${recherche}%`);
   }
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return tous(
-    `SELECT * FROM contenu_drive ${where} ORDER BY COALESCE(jour_prevu, '9999') DESC, date_ajout DESC LIMIT ?`,
+    `SELECT * FROM contenu_drive WHERE ${clauses.join(' AND ')} ORDER BY date_ajout DESC LIMIT ?`,
     ...params,
-    limite,
+    Math.min(500, limite),
   ).map(mapper);
 }
 
 export function obtenirContenu(id) {
-  return mapper(un('SELECT * FROM contenu_drive WHERE id = ?', id));
+  return mapper(un('SELECT * FROM contenu_drive WHERE id = ? AND compte_id = ?', id, compteIdCourant() || ''));
 }
 
 export function contenusDuJour(date, { type } = {}) {
-  const params = [date];
-  let extra = '';
+  const params = [compteIdCourant() || '', date];
+  let filtre = '';
   if (type) {
-    extra = ' AND type = ?';
+    filtre = ' AND type = ?';
     params.push(type);
   }
   return tous(
-    `SELECT * FROM contenu_drive
-     WHERE jour_prevu = ? AND statut IN ('Planifie','Telecharge')${extra}
-     ORDER BY type, date_ajout LIMIT 12`,
+    `SELECT * FROM contenu_drive WHERE compte_id = ? AND jour_prevu = ?${filtre} ORDER BY date_ajout`,
     ...params,
   ).map(mapper);
 }
@@ -284,308 +149,253 @@ export function contenusDuJour(date, { type } = {}) {
 export function prochainContenuDisponible(type = 'Reel') {
   return mapper(
     un(
-      `SELECT * FROM contenu_drive
-       WHERE type = ? AND statut IN ('Planifie','Telecharge')
-       ORDER BY COALESCE(jour_prevu, '9999'), date_ajout LIMIT 1`,
+      `SELECT * FROM contenu_drive WHERE compte_id = ? AND type = ? AND statut IN ('Telecharge','Planifie')
+        AND (jour_prevu IS NULL OR jour_prevu <= date('now'))
+        ORDER BY date_ajout LIMIT 1`,
+      compteIdCourant() || '',
       type,
     ),
   );
 }
 
-/** `telecharger()` du diagramme : rend le contenu disponible pour publication. */
-export function telecharger(id) {
-  const contenu = obtenirContenu(id);
-  if (!contenu) return null;
-  executer(`UPDATE contenu_drive SET statut = 'Telecharge', date_ajout = ? WHERE id = ?`, new Date().toISOString(), id);
-  journaliser(`Contenu téléchargé depuis le Drive : ${contenu.type} · ${contenu.themeLibelle}.`, {
-    categorie: 'drive',
-    donnees: { id },
-  });
-  return obtenirContenu(id);
-}
+/* ─────────────────────────── planification ─────────────────────────── */
 
-export function marquerPublie(id, datePublication) {
-  executer(`UPDATE contenu_drive SET statut = 'Publie', date_publication = ? WHERE id = ?`, datePublication, id);
-  return obtenirContenu(id);
-}
+const QUOTAS = { Story: 3, Reel: 2, UnePleine: 1, PhotoProfil: 1 };
+const JOURS_UNE = new Set([1, 3, 5]); // lundi, mercredi, vendredi
 
-export function marquerPlanifie(id, datePublication) {
-  executer(`UPDATE contenu_drive SET statut = 'Planifie', date_publication = ? WHERE id = ?`, datePublication, id);
-  return obtenirContenu(id);
-}
-
-export function archiver(id) {
-  const contenu = obtenirContenu(id);
-  if (!contenu) return null;
-  executer(`UPDATE contenu_drive SET statut = 'Archive', visibilite = 'prive' WHERE id = ?`, id);
-  journaliser(`Contenu archivé : ${contenu.type} · ${contenu.themeLibelle}.`, { categorie: 'drive' });
-  return obtenirContenu(id);
-}
-
-function supprimerFichier(cheminRelatif) {
-  if (!cheminRelatif) return;
-  const absolu = path.join(config.dossierDrive, cheminRelatif);
-  if (!absolu.startsWith(config.dossierDrive)) return;
-  try {
-    fs.unlinkSync(absolu);
-  } catch {
-    /* fichier déjà absent */
-  }
-}
-
-/** `supprimer()` du diagramme. */
-export function supprimerContenu(id) {
-  const contenu = obtenirContenu(id);
-  if (!contenu) return null;
-  if (contenu.statut === 'Publie') {
-    const erreur = new Error('Impossible de supprimer un contenu déjà publié : archivez-le.');
-    erreur.statut = 409;
-    throw erreur;
-  }
-  supprimerFichier(contenu.cheminPublic);
-  executer('DELETE FROM contenu_drive WHERE id = ?', id);
-  journaliser(`Contenu supprimé du Drive : ${contenu.type}.`, { categorie: 'drive', niveau: 'alerte' });
-  return contenu;
-}
-
-/**
- * `synchroniser()` : importe dans la base les fichiers déposés dans le Drive
- * (équivalent local du dossier Google Drive).
- */
-export function synchroniser() {
-  let importes = 0;
-  const connu = new Set(tous('SELECT chemin_public FROM contenu_drive').map((l) => l.chemin_public));
-  const dossierTelecharges = path.join(config.dossierDrive, 'telecharges');
-  fs.mkdirSync(dossierTelecharges, { recursive: true });
-  for (const fichier of fs.readdirSync(dossierTelecharges)) {
-    const relatif = path.posix.join('telecharges', fichier);
-    if (connu.has(relatif)) continue;
-    const absolu = path.join(config.dossierDrive, relatif);
-    const stats = fs.statSync(absolu);
-    if (!stats.isFile()) continue;
-    const type = /\.(mp4|mov|webm)$/i.test(fichier) ? 'Reel' : /story/i.test(fichier) ? 'Story' : 'UnePleine';
-    executer(
-      `INSERT INTO contenu_drive
-        (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
-         statut, format, theme, miniature, source)
-       VALUES (?, NULL, ?, ?, ?, 'prive', ?, ?, 'Telecharge', ?, 'fitness', ?, 'local')`,
-      uuid(),
-      type,
-      absolu,
-      relatif,
-      `Contenu importé depuis le Drive : ${fichier}`,
-      new Date().toISOString(),
-      type,
-      relatif,
-    );
-    importes += 1;
-  }
-  journaliser(`Drive synchronisé : ${importes} nouveau(x) contenu(s) importé(s).`, {
-    categorie: 'drive',
-    donnees: { importes },
-  });
-  return { importes, total: tous('SELECT COUNT(*) AS n FROM contenu_drive')[0]?.n ?? 0 };
-}
-
-/**
- * Importe les fichiers présents sur Google Drive (source centrale du cahier des
- * charges). Idempotent : un fichier déjà importé n'est pas retéléchargé.
- * Les fichiers restent dans le Drive ; ils seront déplacés vers le dossier
- * d'archive après publication confirmée.
- */
-export async function synchroniserDrive({ types = ['Story', 'Reel', 'UnePleine', 'PhotoProfil'] } = {}) {
-  if (!config.googleDrive.active || !driveConfigure()) {
-    return { actif: false, total: 0, parType: {}, erreurs: [] };
-  }
-  const importes = { parType: {}, total: 0 };
-  const erreurs = [];
-  const connus = new Set(
-    tous('SELECT drive_file_id FROM contenu_drive WHERE drive_file_id IS NOT NULL').map((l) => l.drive_file_id),
+/** Attribue un jour aux contenus qui n'en ont pas, en respectant les quotas. */
+export function plannifierJournee({ date, numeroJour }) {
+  const compteId = exigerCompte();
+  const dejaPlaces = tous(
+    `SELECT type, COUNT(*) AS n FROM contenu_drive WHERE compte_id = ? AND jour_prevu = ? GROUP BY type`,
+    compteId,
+    date,
+  ).reduce((acc, l) => ({ ...acc, [l.type]: l.n }), {});
+  const libres = tous(
+    `SELECT * FROM contenu_drive WHERE compte_id = ? AND jour_prevu IS NULL AND statut = 'Telecharge' ORDER BY date_ajout`,
+    compteId,
   );
+  let places = 0;
+  for (const contenu of libres) {
+    const quota = contenu.type === 'UnePleine' ? (JOURS_UNE.has(numeroJour % 7) ? 1 : 0) : QUOTAS[contenu.type] ?? 0;
+    if (quota <= 0 || (dejaPlaces[contenu.type] || 0) >= quota) continue;
+    executer(`UPDATE contenu_drive SET jour_prevu = ?, statut = 'Planifie' WHERE id = ? AND compte_id = ?`, date, contenu.id, compteId);
+    dejaPlaces[contenu.type] = (dejaPlaces[contenu.type] || 0) + 1;
+    places += 1;
+  }
+  if (places) {
+    journaliser(`${places} contenu(s) placé(s) au ${date}.`, { categorie: 'drive', jour: date });
+  }
+  return places;
+}
 
-  for (const type of types) {
-    const dossierId = config.googleDrive.dossiers[type];
+/* ─────────────────────────── ajout & synchronisation ─────────────────────────── */
+
+export function ajouterContenu({ type, chemin, description = '', source = 'local', driveFileId = null, taille = 0 }) {
+  const compteId = exigerCompte();
+  const id = uuid();
+  const absolu = path.isAbsolute(chemin) ? chemin : path.join(config.dossierMediasCompte(compteId), chemin);
+  const relatif = path.relative(config.dossierMediasCompte(compteId), absolu);
+  const statut = 'Telecharge';
+  executer(
+    `INSERT INTO contenu_drive
+      (id, compte_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
+       statut, format, theme, source, drive_file_id, taille)
+     VALUES (?, ?, ?, ?, ?, 'prive', ?, ?, ?, 'media', '', ?, ?, ?)`,
+    id,
+    compteId,
+    type,
+    relatif,
+    `/media/${compteId}/${relatif.split(path.sep).join('/')}`,
+    String(description || path.basename(absolu)).slice(0, 200),
+    new Date().toISOString(),
+    statut,
+    source,
+    driveFileId,
+    taille,
+  );
+  return obtenirContenu(id);
+}
+
+/** Import d'un fichier envoyé par le navigateur (multipart déjà déposé sur disque). */
+export function importerFichier({ type, nom, donnees, description = '' }) {
+  const compteId = exigerCompte();
+  const dossier = path.join(config.dossierMediasCompte(compteId), PAR_TYPE[type] || 'reels');
+  fs.mkdirSync(dossier, { recursive: true });
+  const nomSur = `${Date.now()}-${String(nom || 'media').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  fs.writeFileSync(path.join(dossier, nomSur), donnees);
+  return ajouterContenu({
+    type,
+    chemin: path.join(PAR_TYPE[type] || 'reels', nomSur),
+    description: description || nom,
+    source: 'local',
+    taille: donnees.length,
+  });
+}
+
+/** Synchronise le dossier Drive partagé du compte. */
+export async function synchroniserDrive({ forcer = false } = {}) {
+  const compteId = exigerCompte();
+  const compte = compteParId(compteId);
+  if (!compte?.driveFolderId) {
+    return { actif: false, total: 0, parType: {}, erreurs: [], raison: 'aucun dossier Drive' };
+  }
+  if (!driveConfigure()) {
+    return { actif: false, total: 0, parType: {}, erreurs: [], raison: 'Google Drive non configuré' };
+  }
+  let dossiers;
+  try {
+    dossiers = await resoudreDossiersDrive(compteId, { forcer });
+  } catch (erreur) {
+    enregistrerErreurCompte(compteId, erreur.message);
+    return { actif: true, total: 0, parType: {}, erreurs: [{ type: 'Drive', message: erreur.message }] };
+  }
+  const connus = new Set(
+    tous('SELECT drive_file_id FROM contenu_drive WHERE compte_id = ? AND drive_file_id IS NOT NULL', compteId).map(
+      (l) => l.drive_file_id,
+    ),
+  );
+  const resultat = { actif: true, total: 0, parType: {}, erreurs: [], dossiers };
+  for (const type of ['Story', 'Reel', 'UnePleine', 'PhotoProfil']) {
+    const dossierId = dossiers[type];
     if (!dossierId) continue;
     let fichiers = [];
     try {
       fichiers = await listerFichiers(dossierId);
     } catch (erreur) {
-      erreurs.push({ type, message: erreur.message });
-      journaliser(`Drive Google illisible (${type}) : ${erreur.message}`, {
-        niveau: 'alerte',
-        categorie: 'drive',
-      });
+      resultat.erreurs.push({ type, message: erreur.message });
       continue;
     }
     for (const fichier of fichiers) {
       if (connus.has(fichier.id)) continue;
       const extension = path.extname(fichier.name || '').toLowerCase();
-      if (!['.mp4', '.mov', '.webm', '.jpg', '.jpeg', '.png', '.webp'].includes(extension)) continue;
+      if (!EXTENSIONS.has(extension)) continue;
+      if (Number(fichier.size || 0) > TAILLE_MAX) {
+        resultat.erreurs.push({ type, fichier: fichier.name, message: 'fichier > 200 Mo' });
+        continue;
+      }
       try {
-        const octets = await telechargerFichier(fichier.id);
-        if (octets.length > 200 * 1024 * 1024) {
-          throw new Error('fichier supérieur à 200 Mo');
-        }
-        const relatif = path.posix.join('telecharges', `${type.toLowerCase()}-${slug(path.basename(fichier.name, extension))}${extension}`);
-        const absolu = path.join(config.dossierDrive, relatif);
-        fs.mkdirSync(path.dirname(absolu), { recursive: true });
-        fs.writeFileSync(absolu, octets);
-        executer(
-          `INSERT INTO contenu_drive
-            (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
-             statut, format, theme, miniature, source, drive_file_id, drive_dossier_id)
-           VALUES (?, NULL, ?, ?, ?, 'prive', ?, ?, 'Telecharge', ?, 'fitness', ?, 'google-drive', ?, ?)`,
-          uuid(),
+        const donnees = await telechargerFichier(fichier.id);
+        const dossierLocal = path.join(config.dossierMediasCompte(compteId), PAR_TYPE[type]);
+        fs.mkdirSync(dossierLocal, { recursive: true });
+        const nomLocal = `${fichier.id.slice(0, 8)}-${String(fichier.name).replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        fs.writeFileSync(path.join(dossierLocal, nomLocal), donnees);
+        const contenu = ajouterContenu({
           type,
-          absolu,
-          relatif,
-          path.basename(fichier.name, extension).replace(/[_-]+/g, ' '),
-          new Date().toISOString(),
-          type,
-          relatif,
-          fichier.id,
-          dossierId,
-        );
+          chemin: path.join(PAR_TYPE[type], nomLocal),
+          description: path.basename(fichier.name, extension).replace(/[_-]+/g, ' '),
+          source: 'drive',
+          driveFileId: fichier.id,
+          taille: donnees.length,
+        });
+        executer('UPDATE contenu_drive SET drive_dossier_id = ? WHERE id = ?', dossierId, contenu.id);
         connus.add(fichier.id);
-        importes.parType[type] = (importes.parType[type] || 0) + 1;
-        importes.total += 1;
+        resultat.parType[type] = (resultat.parType[type] || 0) + 1;
+        resultat.total += 1;
       } catch (erreur) {
-        erreurs.push({ type, fichier: fichier.name, message: erreur.message });
+        resultat.erreurs.push({ type, fichier: fichier.name, message: erreur.message });
       }
     }
   }
-
-  if (importes.total || erreurs.length) {
+  if (resultat.total || resultat.erreurs.length) {
     journaliser(
-      `Google Drive synchronisé : ${importes.total} fichier(s) importé(s)${
-        erreurs.length ? ` · ${erreurs.length} erreur(s)` : ''
+      `Drive de @${compte.username} synchronisé : ${resultat.total} fichier(s) importé(s)${
+        resultat.erreurs.length ? ` · ${resultat.erreurs.length} erreur(s)` : ''
       }.`,
-      { categorie: 'drive', niveau: erreurs.length ? 'alerte' : 'info', donnees: importes },
+      { categorie: 'drive', niveau: resultat.erreurs.length ? 'alerte' : 'info' },
     );
   }
-  return { actif: true, ...importes, erreurs };
+  marquerSync(compteId);
+  return resultat;
 }
 
-/**
- * Archivage sur le Drive après publication confirmée : le fichier quitte le
- * dossier « à publier » sans être supprimé (restauration possible).
- */
+/** Archivage sur le Drive : le fichier quitte la file, il n'est jamais supprimé. */
 export async function archiverSurDrive(id) {
   const contenu = obtenirContenu(id);
-  if (!contenu?.driveFileId || !config.googleDrive.dossierArchive) return { deplace: false };
+  if (!contenu?.driveFileId) return { deplace: false, raison: 'contenu local' };
+  const compte = compteParId(contenu.compteId);
+  const dossiers = compte?.driveSousDossiers || {};
+  if (!dossiers.Archive || !driveConfigure()) return { deplace: false, raison: 'archive Drive non configurée' };
   try {
     const resultat = await deplacerFichier(contenu.driveFileId, {
-      depuis: contenu.driveDossierId || undefined,
-      vers: config.googleDrive.dossierArchive,
+      depuis: contenu.driveDossierId,
+      vers: dossiers.Archive,
     });
-    executer(`UPDATE contenu_drive SET drive_dossier_id = ? WHERE id = ?`, config.googleDrive.dossierArchive, id);
-    journaliser(`Contenu ${contenu.type} déplacé vers le dossier d’archive du Drive.`, { categorie: 'drive' });
     return resultat;
   } catch (erreur) {
     journaliser(`Archivage Drive impossible : ${erreur.message}`, { niveau: 'alerte', categorie: 'drive' });
-    return { deplace: false, erreur: erreur.message };
+    return { deplace: false, raison: erreur.message };
   }
 }
 
-/** Ajout d'un média par le responsable (glisser-déposer dans l'interface). */
-export function ajouterContenu({
-  nomFichier,
-  mime = '',
-  donneesBase64,
-  type = 'Reel',
-  description = '',
-  jourPrevu = null,
-  theme = 'fitness',
-}) {
-  if (!donneesBase64) {
-    const erreur = new Error('Fichier manquant.');
-    erreur.statut = 400;
-    throw erreur;
-  }
-  const buffer = Buffer.from(String(donneesBase64).replace(/^data:[^;]+;base64,/, ''), 'base64');
-  if (buffer.length > 25 * 1024 * 1024) {
-    const erreur = new Error('Fichier trop volumineux (25 Mo max).');
-    erreur.statut = 413;
-    throw erreur;
-  }
-  const extension = path.extname(nomFichier || '').toLowerCase() || (mime.startsWith('video') ? '.mp4' : '.jpg');
-  const autorisees = ['.mp4', '.mov', '.webm', '.jpg', '.jpeg', '.png', '.webp', '.svg'];
-  if (!autorisees.includes(extension)) {
-    const erreur = new Error(`Format non supporté (${extension}).`);
-    erreur.statut = 415;
-    throw erreur;
-  }
-  const nom = `${Date.now()}-${slug(path.basename(nomFichier || 'media', extension))}${extension}`;
-  const relatif = path.posix.join('telecharges', nom);
-  const absolu = path.join(config.dossierDrive, relatif);
-  fs.mkdirSync(path.dirname(absolu), { recursive: true });
-  fs.writeFileSync(absolu, buffer);
-  const id = uuid();
-  const typeFinal = extension.match(/mp4|mov|webm/) ? 'Reel' : type;
+/* ─────────────────────────── statuts ─────────────────────────── */
+
+export function marquerPublie(id, datePublication = new Date().toISOString()) {
   executer(
-    `INSERT INTO contenu_drive
-      (id, cycle_id, type, chemin_fichier, chemin_public, visibilite, description, date_ajout,
-       statut, jour_prevu, format, theme, miniature, source)
-     VALUES (?, NULL, ?, ?, ?, 'prive', ?, ?, 'Telecharge', ?, ?, ?, ?, 'upload')`,
+    `UPDATE contenu_drive SET statut = 'Publie', date_publication = ? WHERE id = ? AND compte_id = ?`,
+    datePublication,
     id,
-    typeFinal,
-    absolu,
-    relatif,
-    description || path.basename(nomFichier || 'média importé'),
-    new Date().toISOString(),
-    jourPrevu,
-    typeFinal,
-    theme,
-    relatif,
+    compteIdCourant() || '',
   );
-  journaliser(`Nouveau média ajouté au Drive : ${nomFichier} (${Math.round(buffer.length / 1024)} Ko).`, {
-    categorie: 'drive',
-  });
+}
+
+export function marquerPlanifie(id, date) {
+  executer('UPDATE contenu_drive SET statut = ? WHERE id = ? AND compte_id = ?', date ? 'Planifie' : 'Telecharge', id, compteIdCourant() || '');
+}
+
+export function archiver(id) {
+  executer(`UPDATE contenu_drive SET statut = 'Archive', visibilite = 'prive' WHERE id = ? AND compte_id = ?`, id, compteIdCourant() || '');
   return obtenirContenu(id);
 }
 
-export function statistiquesDrive() {
-  const parStatut = Object.fromEntries(
-    tous('SELECT statut, COUNT(*) AS n FROM contenu_drive GROUP BY statut').map((l) => [l.statut, l.n]),
-  );
-  const parType = Object.fromEntries(
-    tous('SELECT type, COUNT(*) AS n FROM contenu_drive GROUP BY type').map((l) => [l.type, l.n]),
-  );
-  const parTheme = Object.fromEntries(
-    tous('SELECT theme, COUNT(*) AS n FROM contenu_drive GROUP BY theme').map((l) => [l.theme, l.n]),
-  );
-  let octets = 0;
-  let fichiers = 0;
-  for (const dossier of ['reels', 'stories', 'livre', 'photos', 'telecharges']) {
-    const chemin = path.join(config.dossierDrive, dossier);
-    if (!fs.existsSync(chemin)) continue;
-    for (const fichier of fs.readdirSync(chemin)) {
-      const stats = fs.statSync(path.join(chemin, fichier));
-      if (stats.isFile()) {
-        octets += stats.size;
-        fichiers += 1;
-      }
+export function supprimerContenu(id) {
+  const contenu = obtenirContenu(id);
+  if (!contenu) return null;
+  const absolu = path.join(config.dossierMediasCompte(contenu.compteId), contenu.chemin || '');
+  if (absolu.startsWith(config.dossierMediasCompte(contenu.compteId))) {
+    try {
+      fs.rmSync(absolu, { force: true });
+    } catch {
+      /* fichier déjà absent */
     }
   }
+  executer('DELETE FROM contenu_drive WHERE id = ? AND compte_id = ?', id, contenu.compteId);
+  journaliser(`Contenu supprimé : ${contenu.description || contenu.id}.`, { categorie: 'drive', niveau: 'alerte' });
+  return contenu;
+}
+
+/** Marque un contenu comme téléchargé (compatibilité interface). */
+export function telecharger(id) {
+  return obtenirContenu(id);
+}
+
+/** Synchronisation locale (aucun média fabriqué) : renvoie l'inventaire. */
+export function synchroniser() {
+  return statistiquesDrive();
+}
+
+export function statistiquesDrive() {
+  const compteId = compteIdCourant() || '';
+  const parStatut = tous(
+    'SELECT statut, COUNT(*) AS n FROM contenu_drive WHERE compte_id = ? GROUP BY statut',
+    compteId,
+  );
+  const parType = tous('SELECT type, COUNT(*) AS n FROM contenu_drive WHERE compte_id = ? GROUP BY type', compteId);
   return {
-    parStatut,
-    parType,
-    parTheme,
-    total: Object.values(parStatut).reduce((a, b) => a + b, 0),
-    fichiers,
-    octets,
-    dossier: config.dossierDrive,
-    googleDriveActif: config.googleDrive.active,
+    total: parStatut.reduce((s, l) => s + l.n, 0),
+    parStatut: Object.fromEntries(parStatut.map((l) => [l.statut, l.n])),
+    parType: Object.fromEntries(parType.map((l) => [l.type, l.n])),
   };
 }
 
-/** URL publique d'un média à partir de son chemin relatif. */
 export function urlMedia(cheminPublic) {
   if (!cheminPublic) return null;
-  return `/media/${cheminPublic.split('/').map(encodeURIComponent).join('/')}`;
+  return String(cheminPublic).startsWith('/') ? cheminPublic : `/${cheminPublic}`;
 }
 
-export function urlPubliqueAbsolue(cheminPublic, base) {
+export function urlPubliqueAbsolue(cheminPublic, base = config.urlPublique) {
   const chemin = urlMedia(cheminPublic);
-  return chemin ? `${base}${chemin}` : null;
+  if (!chemin) return null;
+  if (!base) return chemin;
+  return `${String(base).replace(/\/$/, '')}${chemin}`;
 }

@@ -3,6 +3,7 @@ import { uuid } from '../utils/ids.js';
 import { config } from '../config.js';
 import { PAYS_AUTORISES, GENRES, OBJECTIF } from '../../public/shared/enums.js';
 import { journaliser } from './journal.js';
+import { compteIdCourant, exigerCompte } from './contexte.js';
 
 function mapper(ligne) {
   if (!ligne) return null;
@@ -32,35 +33,21 @@ const AUDIENCE_PAR_DEFAUT = Object.freeze({
   parDefaut: true,
 });
 
-export function assurerParametres({ agentId = null, compteId = null } = {}) {
-  const existant = un('SELECT * FROM parametres_audience LIMIT 1');
+/**
+ * L'audience est fournie par le responsable : aucun enregistrement n'est créé
+ * d'office. Sans paramètres, les valeurs affichées sont celles du plancher légal.
+ */
+export function assurerParametres() {
+  const compteId = compteIdCourant();
+  const existant = compteId
+    ? un('SELECT * FROM parametres_audience WHERE compte_id = ?', compteId)
+    : un('SELECT * FROM parametres_audience WHERE compte_id = ?', '');
   if (existant) return mapper(existant);
-  // Production : l'audience est fournie par le responsable, pas créée d'office.
-  if (config.production) return { ...AUDIENCE_PAR_DEFAUT };
-  const id = uuid();
-  const date = new Date().toISOString();
-  const pays = ['USA', 'France', 'RoyaumeUni', 'Allemagne', 'Pologne', 'AutresPays'];
-  executer(
-    `INSERT INTO parametres_audience
-      (id, agent_id, compte_id, age_minimum, pays_autorises, pays_exclus, genre, created_le, maj_le)
-     VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
-    id,
-    agentId,
-    compteId,
-    Math.max(OBJECTIF.ageMinimum, config.ageMinimum),
-    JSON.stringify(pays),
-    'NonPrecise',
-    date,
-    date,
-  );
-  journaliser('Paramètres d’audience initialisés (pays autorisés, âge minimum 25 ans).', {
-    categorie: 'audience',
-  });
-  return mapper(un('SELECT * FROM parametres_audience WHERE id = ?', id));
+  return { ...AUDIENCE_PAR_DEFAUT, compteId };
 }
 
 export function obtenirParametres() {
-  return mapper(un('SELECT * FROM parametres_audience LIMIT 1')) || assurerParametres() || { ...AUDIENCE_PAR_DEFAUT };
+  return assurerParametres();
 }
 
 /** `appliquer()` du diagramme : valide et enregistre les paramètres. */
@@ -80,20 +67,23 @@ export function configurerParametres(payload = {}) {
   const maintenant = new Date().toISOString();
   if (actuel.id) {
     executer(
-      `UPDATE parametres_audience SET age_minimum = ?, pays_autorises = ?, pays_exclus = ?, genre = ?, maj_le = ? WHERE id = ?`,
+      `UPDATE parametres_audience SET age_minimum = ?, pays_autorises = ?, pays_exclus = ?, genre = ?, maj_le = ?
+        WHERE id = ? AND compte_id = ?`,
       ageMinimum,
       JSON.stringify(pays),
       JSON.stringify(paysExclus),
       genre,
       maintenant,
       actuel.id,
+      exigerCompte(),
     );
   } else {
     executer(
       `INSERT INTO parametres_audience
         (id, agent_id, compte_id, age_minimum, pays_autorises, pays_exclus, genre, created_le, maj_le)
-       VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
       uuid(),
+      exigerCompte(),
       ageMinimum,
       JSON.stringify(pays),
       JSON.stringify(paysExclus),

@@ -36,9 +36,13 @@ const booleen = (valeur, defaut = false) =>
 
 const dossierDonnees = path.resolve(RACINE, process.env.DATA_DIR || 'data');
 
-/** `production` verrouille les données de démonstration : rien n'est inventé. */
-const environnement = (process.env.APP_ENV || 'developpement').toLowerCase();
-const production = environnement === 'production';
+/**
+ * Mode live uniquement : aucune donnée n'est inventée, l'application refuse de
+ * publier sans identifiants Graph et sans média réel. `APP_ENV` n'est conservé
+ * que pour l'affichage.
+ */
+const environnement = (process.env.APP_ENV || 'production').toLowerCase();
+const production = true;
 
 export const config = Object.freeze({
   racine: RACINE,
@@ -48,16 +52,21 @@ export const config = Object.freeze({
   dossierPublic: path.join(RACINE, 'public'),
   dossierDrive: path.join(dossierDonnees, 'drive'),
   dossierRapports: path.join(dossierDonnees, 'rapports'),
+  dossierComptes: path.join(dossierDonnees, 'comptes'),
+  // Chaque compte possède ses médias et ses rapports, cloisonnés sur disque.
+  dossierCompte: (id) => path.join(dossierDonnees, 'comptes', String(id)),
+  dossierMediasCompte: (id) => path.join(dossierDonnees, 'comptes', String(id), 'drive'),
+  dossierRapportsCompte: (id) => path.join(dossierDonnees, 'comptes', String(id), 'rapports'),
   fichierBase: path.join(dossierDonnees, 'insta-va.sqlite'),
   fichierCle: path.join(dossierDonnees, '.cle'),
   fuseau: process.env.IG_TIMEZONE || 'America/New_York',
   environnement,
   production,
-  modeInstagram: (process.env.INSTAGRAM_MODE || (production ? 'graph' : 'simulation')).toLowerCase(),
-  vitesseDefaut: Math.max(1, nombre(process.env.VITESSE_DEFAUT, production ? 1 : 6)),
-  // En production, aucun historique n'est fabriqué : les données sont fournies.
-  amorcageJours: production ? 0 : Math.max(0, nombre(process.env.AMORCAGE_JOURS, 6)),
-  interactionsActives: booleen(process.env.INSTAVA_INTERACTIONS, !production),
+  modeInstagram: 'graph',
+  vitesseDefaut: Math.max(1, nombre(process.env.VITESSE_DEFAUT, 1)),
+  // Aucun historique n'est fabriqué : les données viennent d'Instagram et du Drive.
+  amorcageJours: 0,
+  interactionsActives: false,
   motDePasse: process.env.INSTAVA_MOT_DE_PASSE || '',
   hashMotDePasse: process.env.INSTAVA_MOT_DE_PASSE_HASH || '',
   secretSession: process.env.INSTAVA_SECRET || '',
@@ -104,16 +113,14 @@ export const config = Object.freeze({
 });
 
 export function preparerDossiers() {
-  for (const dossier of [
-    config.dossierDonnees,
-    config.dossierDrive,
-    path.join(config.dossierDrive, 'reels'),
-    path.join(config.dossierDrive, 'stories'),
-    path.join(config.dossierDrive, 'photos'),
-    path.join(config.dossierDrive, 'livre'),
-    path.join(config.dossierDrive, 'telecharges'),
-    config.dossierRapports,
-  ]) {
+  for (const dossier of [config.dossierDonnees, config.dossierComptes, config.dossierRapports]) {
+    fs.mkdirSync(dossier, { recursive: true });
+  }
+}
+
+/** Prépare les dossiers d'un compte (médias téléchargés, rapports). */
+export function preparerDossiersCompte(compteId) {
+  for (const dossier of [config.dossierMediasCompte(compteId), config.dossierRapportsCompte(compteId)]) {
     fs.mkdirSync(dossier, { recursive: true });
   }
 }
