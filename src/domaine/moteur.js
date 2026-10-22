@@ -13,7 +13,7 @@ import { assurerAgent, agentCourant } from './agent.js';
 import { assurerCompte, comptePublic, definirCycleActuel, marquerJourCycle } from './compte.js';
 import { assurerParametres, obtenirParametres } from './audience.js';
 import { assurerCibles } from './cibles.js';
-import { plannifierJournee, assurerPhotoProfil, synchroniser } from './drive.js';
+import { plannifierJournee, assurerPhotoProfil, synchroniser, synchroniserDrive, archiverSurDrive } from './drive.js';
 import {
   planifierPublicationsDuJour,
   publierPublication,
@@ -34,15 +34,19 @@ import { collecterVeille } from './veille.js';
 import { detecterAnomalie, compterAnomaliesOuvertes, listerAnomalies } from './anomalies.js';
 import { journaliser, notifier, compterNotificationsNonLues, listerJournal } from './journal.js';
 import { etatConfiguration, moteurAutorise } from './configuration.js';
+import { collecterEtRepondre, verifierCommentairesEnAttente } from './commentaires.js';
+import { clicsDuJour, statistiquesLiens } from './liens.js';
 
 const PRIORITE = {
   session_debut: 0,
   session_fin: 0,
   publication: 2,
+  commentaires: 2,
   interactions: 3,
   visionnage: 4,
   reactions: 5,
   statistiques: 6,
+  suivi_commentaires: 7,
   rapport: 7,
   cloture: 8,
 };
@@ -52,6 +56,7 @@ const ETAPES = [
   { etape: 'Préparation de la journée', heure: '16:05' },
   { etape: 'Publication (16h → 00h)', heure: '16:10' },
   { etape: 'Visionnage (≥ 30 min)', heure: '16:35' },
+  { etape: 'Réponses aux commentaires', heure: '16:20' },
   { etape: 'Interactions (like / commentaire / suivi)', heure: '16:25' },
   { etape: 'Statistiques & rapport du jour', heure: '23:52' },
   { etape: 'Clôture de la journée', heure: '23:59' },
@@ -270,7 +275,18 @@ function construirePlan({ cycle, date, publications }) {
     });
   }
 
+  // Réponses aux commentaires : la seule interaction disponible via l'API.
+  if (config.reponsesCommentaires) {
+    const pas = Math.max(5, config.intervalleCommentairesMin);
+    for (let minute = 16 * 60 + 40; minute <= 23 * 60 + 40; minute += pas) {
+      pousser({ minute, type: 'commentaires', libelle: 'Réponses aux commentaires reçus' });
+    }
+  }
+
   pousser({ minute: 1432, type: 'statistiques', libelle: 'Calcul des statistiques du jour' });
+  if (config.reponsesCommentaires) {
+    pousser({ minute: 1434, type: 'suivi_commentaires', libelle: 'Contrôle des commentaires en attente' });
+  }
   pousser({ minute: 1436, type: 'rapport', libelle: 'Génération du rapport quotidien' });
   pousser({ minute: 1439, type: 'cloture', libelle: 'Clôture de la journée' });
 
@@ -368,6 +384,8 @@ async function executerTache(tache) {
         if (publication?.statut === 'Publiee') {
           etat.compteurPublications += 1;
           tache.libelle = `Publication ${publication.type} publiée`;
+          // Le fichier quitte la file « à publier » du Drive (déplacé, jamais supprimé).
+          if (publication.contenuId) await archiverSurDrive(publication.contenuId);
           majExecution('Publication (16h → 00h)', 'EnCours', `${etat.compteurPublications} publiée(s) aujourd’hui`, minute);
         } else {
           tache.statut = 'Echec';
@@ -408,6 +426,12 @@ async function executerTache(tache) {
         majExecution('Interactions (like / commentaire / suivi)', 'EnCours', `${etat.compteurInteractions} interaction(s) aujourd’hui`, minute);
         break;
       }
+      case 'commentaires': {
+        const resultat = await collecterEtRepondre();
+        tache.libelle = `${resultat.repondues || 0} réponse(s) publiée(s)`;
+        majExecution('Réponses aux commentaires', 'Effectue', `${resultat.reponduees || 0} réponse(s)`, minute);
+        break;
+      }
       case 'visionnage': {
         const session = sessionPourMinute(etat.minuteJour);
         enregistrerVisionnage({
@@ -439,6 +463,11 @@ async function executerTache(tache) {
           });
         }
         majExecution('Statistiques & rapport du jour', 'EnCours', 'Statistiques calculées', minute);
+        break;
+      }
+      case 'suivi_commentaires': {
+        const enAttente = verifierCommentairesEnAttente();
+        tache.libelle = `${enAttente} commentaire(s) en attente`;
         break;
       }
       case 'rapport': {
@@ -547,6 +576,7 @@ async function demarrerJourneeSuivante() {
   }
   const { date, numeroJour, cycleNumero } = etat.prochaineJournee;
   etat.prochaineJournee = null;
+  await synchroniserDriveSiConfigure();
   preparerJournee({ date, numeroJour, cycleNumero });
   etat.dernierTick = Date.now();
 }
@@ -627,27 +657,72 @@ export async function demarrerMoteur({ silencieux = false } = {}) {
   const aujourdHui = dateDansFuseau(config.fuseau);
   const dernier = un('SELECT * FROM cycle ORDER BY date_debut DESC, numero_jour DESC LIMIT 1');
   let date = aujourdHui;
-  let numeroJour = 1;
+  // Jour 1 du premier cycle = configuration manuelle (cahier des charges §7).
+  let numeroJour = Math.min(config.dureeCycleJours, config.jourConfiguration + 1);
   let cycleNumero = 1;
+
   if (dernier) {
     cycleNumero = dernier.cycle_numero;
-    numeroJour = dernier.numero_jour + 1;
     if (dernier.statut !== 'Termine') {
-      // reprise de la journée interrompue
-      date = dernier.date_debut;
-      numeroJour = dernier.numero_jour;
-      executer(`UPDATE cycle SET statut = 'EnCours', termine_le = NULL WHERE id = ?`, dernier.id);
-    } else if (dernier.date_debut >= aujourdHui) {
-      date = ajouterJours(dernier.date_debut, 1);
+      const jourInterrompu = dernier.date_debut < aujourdHui;
+      if (jourInterrompu) {
+        // Arrêt survenu un jour précédent : on ne rejoue pas la journée manquée
+        // (risque de rafale de publications). Elle est clôturée « Interrompu ».
+        executer(`UPDATE cycle SET statut = 'Interrompu', termine_le = ? WHERE id = ?`, new Date().toISOString(), dernier.id);
+        numeroJour = dernier.numero_jour + 1;
+        journaliser(
+          `Reprise après arrêt : la journée du ${dernier.date_debut} n’a pas été rejouée.`,
+          { niveau: 'alerte', categorie: 'systeme', donnees: { jourManque: dernier.date_debut } },
+        );
+        notifier({
+          type: 'systeme',
+          titre: 'Reprise après interruption',
+          message: `Le moteur s’est arrêté avant la fin du ${dernier.date_debut}. Cette journée a été clôturée sans rattrapage pour éviter une rafale de publications.`,
+          niveau: 'Avertissement',
+          lien: '/#/cycle',
+        });
+        detecterAnomalie('RepriseApresArret', `Journée du ${dernier.date_debut} interrompue (arrêt du serveur).`, {
+          severite: 'Avertissement',
+          details: { dateManquee: dernier.date_debut },
+        });
+      } else {
+        // Arrêt le même jour : on reprend la journée là où elle s'était arrêtée.
+        date = dernier.date_debut;
+        numeroJour = dernier.numero_jour;
+        executer(`UPDATE cycle SET statut = 'EnCours', termine_le = NULL WHERE id = ?`, dernier.id);
+      }
+    } else {
+      numeroJour = dernier.numero_jour + 1;
+      if (dernier.date_debut >= aujourdHui) date = ajouterJours(dernier.date_debut, 1);
     }
     if (numeroJour > config.dureeCycleJours) {
       numeroJour = 1;
       cycleNumero += 1;
     }
   }
+  await synchroniserDriveSiConfigure();
   preparerJournee({ date, numeroJour, cycleNumero });
   assurerBoucle();
   return etatPublic();
+}
+
+/**
+ * Synchronisation Google Drive au démarrage et à chaque changement de journée.
+ * Silencieuse en cas d'échec : le moteur continue avec le stock local et
+ * l'incident est journalisé.
+ */
+export async function synchroniserDriveSiConfigure() {
+  const { driveConfigure } = await import('../services/drive-google.js');
+  if (!config.googleDrive.active || !driveConfigure()) return { actif: false, importes: 0 };
+  try {
+    return await synchroniserDrive();
+  } catch (erreur) {
+    journaliser(`Synchronisation Google Drive impossible : ${erreur.message}`, {
+      niveau: 'alerte',
+      categorie: 'drive',
+    });
+    return { actif: true, importes: 0, erreurs: [{ message: erreur.message }] };
+  }
 }
 
 export function mettreEnPause() {
@@ -958,6 +1033,10 @@ export function etatPublic() {
     execution: executionDuJour(),
     flux: listerJournal({ limite: 14 }),
     alertes: listerAnomalies({ limite: 5 }).filter((a) => a.statut !== 'Resolue'),
+    liens: {
+      clicsAujourdhui: clicsDuJour(jour),
+      clics30Jours: statistiquesLiens({ jours: 30 }).total,
+    },
     compteurs: {
       notifications: compterNotificationsNonLues(),
       anomalies: compterAnomaliesOuvertes(),

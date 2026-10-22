@@ -78,16 +78,29 @@ export const config = Object.freeze({
   googleDrive: Object.freeze({
     active: booleen(process.env.GOOGLE_DRIVE_ENABLED),
     token: process.env.GOOGLE_ACCESS_TOKEN || '',
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    jetonRafraichissement: process.env.GOOGLE_REFRESH_TOKEN || '',
+    intervalleSyncMin: Math.max(5, nombre(process.env.GOOGLE_SYNC_MINUTES, 30)),
     dossiers: Object.freeze({
       Reel: process.env.GOOGLE_DRIVE_REELS_FOLDER_ID || '',
       Story: process.env.GOOGLE_DRIVE_STORIES_FOLDER_ID || '',
       PhotoProfil: process.env.GOOGLE_DRIVE_PHOTOS_FOLDER_ID || '',
+      UnePleine: process.env.GOOGLE_DRIVE_LIVRE_FOLDER_ID || '',
     }),
+    dossierArchive: process.env.GOOGLE_DRIVE_ARCHIVE_FOLDER_ID || '',
   }),
+  // Réponses aux commentaires reçus (seule interaction réellement disponible via l'API).
+  // Priorité du cahier des charges : répondre aux commentaires reçus.
+  // Activé par défaut ; inopérant sans identifiants Graph.
+  reponsesCommentaires: booleen(process.env.INSTAVA_REPONSES_COMMENTAIRES, true),
+  intervalleCommentairesMin: Math.max(5, nombre(process.env.INSTAVA_COMMENTAIRES_MINUTES, 20)),
+  jourConfiguration: Math.max(1, nombre(process.env.INSTAVA_JOUR_CONFIGURATION, 1)),
+  rattrapageMaxHeures: Math.max(0, nombre(process.env.INSTAVA_RATTRAPAGE_HEURES, 12)),
   webhookRapport: process.env.RAPPORT_WEBHOOK_URL || '',
   urlPublique: (process.env.URL_PUBLIQUE || '').replace(/\/$/, ''),
-  version: '1.1.0',
-  versionApi: '1.1.0',
+  version: '1.2.0',
+  versionApi: '1.2.0',
 });
 
 export function preparerDossiers() {

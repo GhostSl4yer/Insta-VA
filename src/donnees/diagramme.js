@@ -157,6 +157,9 @@ export const ENUMERATIONS = [
   { nom: 'TypeInteraction', valeurs: ['Like', 'Commentaire', 'Visionnage', 'Suivi'] },
   { nom: 'StatutCycle', valeurs: ['NonCommence', 'EnCours', 'EnPause', 'Termine', 'Relance'] },
   { nom: 'TypePays', valeurs: ['USA', 'France', 'RoyaumeUni', 'Allemagne', 'Pologne', 'AutresPays'] },
+  { nom: 'StatutExecution', valeurs: ['Planifie', 'EnCours', 'Effectue', 'Reporte', 'Ignore', 'Echec', 'Suspendu'] },
+  { nom: 'StatutContenu', valeurs: ['Telecharge', 'Planifie', 'Publie', 'Archive', 'Echec'] },
+  { nom: 'StatutReponseCommentaire', valeurs: ['ARepondre', 'Repondu', 'Echec'] },
 ];
 
 export const EXTENSIONS = [
@@ -173,6 +176,18 @@ export const EXTENSIONS = [
     description: 'Le diagramme mentionne « détecter une anomalie » : le journal et les anomalies rendent cette étape exploitable.',
   },
   {
+    nom: 'Google Drive comme source centrale',
+    description: 'Les contenus sont lus dans des dossiers Drive (Reels, Stories, UnePleine, PhotoProfil), téléchargés puis déplacés vers un dossier Archive après publication confirmée — jamais supprimés. En cas d’échec, le fichier reste en place.',
+  },
+  {
+    nom: 'Réponses aux commentaires',
+    description: 'Seule interaction sortante exécutable par l’API officielle (instagram_manage_comments). Réponse choisie dans une banque FR/EN selon la langue et l’intention, dédupliquée par identifiant de commentaire, avec alerte au-delà de 24 h sans réponse.',
+  },
+  {
+    nom: 'Lien de suivi et clics',
+    description: 'Instagram ne transmet pas les clics de la bio : un lien court /l/:code enregistre le clic (jour, pays, référent tronqué) puis redirige. Aucune adresse IP ni cookie conservé.',
+  },
+  {
     nom: 'Moteur de simulation',
     description: 'Comme l’API Instagram ne permet pas de liker/commenter automatiquement, le moteur simule ces actions de façon déterministe et traçable ; le mode Graph reste disponible pour la publication.',
   },
@@ -180,8 +195,8 @@ export const EXTENSIONS = [
 
 export const FLUX = [
   { jour: 1, etapes: ['Configuration manuelle du profil (photo, bio, nom, lien)', 'Initialisation de l’audience et des comptes de référence'] },
-  { jour: 2, etapes: ['À partir du jour 2 : cycle quotidien 16 h → 00 h', 'Publications planifiées et vérifiées dans le Drive'] },
-  { jour: 3, etapes: ['Visionnage de vidéos ≥ 30 min / jour', 'Interactions : likes, commentaires, suivis (jamais de DM)'] },
+  { jour: 2, etapes: ['À partir du jour 2 : cycle quotidien 16 h → 00 h', 'Publications planifiées et vérifiées dans le Drive', 'Réponses aux commentaires reçus toutes les 20 min'] },
+  { jour: 3, etapes: ['Suivi de la session de visionnage (≥ 30 min visées)', 'Lecture des réactions entrantes — likes, suivis et visionnages ne sont pas automatisés (jamais de DM)'] },
   { jour: 4, etapes: ['Analyse des statistiques pays par pays', 'Ajustement des paramètres d’audience'] },
   { jour: 30, etapes: ['Bilan du cycle, rapport mensuel', 'Relancement automatique du cycle (même compte, même historique)'] },
 ];

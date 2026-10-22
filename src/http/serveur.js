@@ -9,6 +9,7 @@ import {
   ipClient, tentativesRestantes, enregistrerEchec, reinitialiserTentatives,
 } from './auth.js';
 import { pageConnexion, pageErreur } from './pages.js';
+import { enregistrerClic } from '../domaine/liens.js';
 
 const clientsSse = new Set();
 let diffusion = null;
@@ -200,6 +201,24 @@ function creerServeur() {
           environnement: config.environnement,
           heure: new Date().toISOString(),
         });
+        return;
+      }
+
+      // Lien de suivi : public (c'est un lien partagé), puis redirection.
+      if (chemin.startsWith('/l/') && req.method === 'GET') {
+        const code = chemin.slice(3).replace(/\/+$/, '');
+        const resultat = enregistrerClic({
+          code,
+          referent: String(req.headers.referer || ''),
+          pays: String(req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || ''),
+        });
+        if (!resultat) {
+          res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+          res.end(pageErreur({ statut: 404, titre: 'Lien introuvable', message: 'Ce lien n’existe plus.' }));
+          return;
+        }
+        res.writeHead(302, { location: resultat.url, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+        res.end();
         return;
       }
 

@@ -55,6 +55,26 @@ Un contenu sans jour affecté est automatiquement placé sur la première journ�
 Prévoyez au minimum **3 stories par jour de cycle** (90 pour 30 jours) et **2 Reels par jour**
 (60) pour couvrir un cycle complet.
 
+### Source Google Drive
+
+1. Créer un dossier racine dans le Drive du compte, partagé avec l'application.
+2. Créer les sous-dossiers `Reels/`, `Stories/`, `UnePleine/`, `PhotoProfil/`, `Archive/`.
+3. Renseigner dans `.env` : `GOOGLE_DRIVE_ENABLED=true`, `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, puis les identifiants de dossiers
+   (`/folders/<ID>` dans l'URL Drive).
+4. Redémarrer, puis vérifier dans **Drive → Synchroniser** que les fichiers sont indexés.
+
+Après une publication confirmée, le fichier est **déplacé** vers `Archive/` : ce n'est pas une
+suppression. Si la publication échoue, le fichier reste en place et sera réessayé au cycle
+suivant. Les fichiers de plus de 200 Mo sont ignorés et journalisés.
+
+### Lien de suivi
+
+Placez dans la bio le lien court affiché dans **Lien & commentaires** (par exemple
+`https://bot.exemple.com/l/abc2345`). Chaque visite est comptée (jour, pays, référent tronqué)
+puis redirigée en `302`; aucune adresse IP ni cookie n'est conservé. Le lien fonctionne sans
+authentification et doit donc rester accessible derrière Caddy.
+
 ---
 
 ## 4. Déploiement A — Docker + Caddy (recommandé)
@@ -127,6 +147,7 @@ bot.exemple.com {
 | boucle de fond qui avance l'horloge toutes les 400 ms | aucune fonction ne survit entre deux requêtes |
 | SQLite sur disque (`node:sqlite`) | système de fichiers éphémère et non partagé |
 | flux SSE permanent | durée d'exécution plafonnée |
+| redirection mesurée `/l/:code` | liens courts fonctionnels, mais comptage non partagé entre instances |
 | état en mémoire (plan de journée, sessions) | chaque invocation repart d'un processus neuf |
 
 Trois voies existent :
@@ -140,6 +161,11 @@ Trois voies existent :
 
 Le fichier `Dockerfile` fourni fonctionne tel quel sur Fly.io, Render, Railway et Scalingo.
 
+**Ce qui reste utilisable sur Vercel** : l'interface statique, les endpoints de lecture et la
+documentation. **Ce qui ne l'est pas** : la publication planifiée, la synchronisation Drive, la
+collecte des commentaires et le comptage fiable des clics. Le détail des décisions ouvertes est
+dans [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ---
 
 ## 7. Mise en service (dans l'interface)
@@ -150,10 +176,14 @@ Après connexion, l'écran **Mise en service** demande, bloc par bloc :
 2. **Compte Instagram** — nom d'utilisateur, nom affiché, bio, lien de la bio, localisation ;
 3. **Audience** — âge minimum (plancher 25 ans), pays autorisés, genre ;
 4. **Identifiants Graph** — `IG_USER_ID` et jeton (chiffré avant stockage) ;
-5. **Contenus** — import des médias réels ;
+5. **Contenus** — import des médias réels (ou synchronisation Google Drive) ;
 6. **Validation** — vérifie l'ensemble et démarre le moteur.
 
 Chaque bloc est enregistré séparément : vous pouvez fermer la console et reprendre plus tard.
+
+Les **réponses aux commentaires** sont activées par défaut (`INSTAVA_REPONSES_COMMENTAIRES=true`)
+et ne s'exécutent qu'avec des identifiants Graph valides. Elles sont la seule interaction
+sortante réellement disponible : likes, abonnements et visionnages ne sont pas automatisés.
 
 ---
 

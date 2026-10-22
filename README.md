@@ -154,6 +154,7 @@ relance automatique. Voir l’écran **Programme 30 jours**.
 | **Publications** | Planning, publication, retrait, vérification de statut |
 | **Cibles scorées** | Analyse, scoring, rejet hors zone, suivi |
 | **Interactions** | Likes, commentaires, visionnages, suivis, filtrage par pays |
+| **Lien & commentaires** | Liens de suivi `/l/:code`, clics réels par pays, réponses aux commentaires reçus |
 | **Abonnements** | Comptes suivis, comptes de référence, conformité R6 |
 | **Statistiques** | Portée, vues, engagement, abonnés, pays, top contenus |
 | **Rapports** | Génération, lecture, export Markdown, transmission |
@@ -181,6 +182,9 @@ relance automatique. Voir l’écran **Programme 30 jours**.
 | `GET` | `/api/cibles?statut=&pays=&recherche=` | Cibles scorées |
 | `POST` | `/api/cibles/:id/analyser` · `suivre` | Analyse et suivi |
 | `GET` | `/api/interactions?type=&sens=&pays=&date=` | Journal des interactions |
+| `GET/POST` | `/api/liens` · `DELETE /api/liens/:id` | Liens de suivi et statistiques de clics |
+| `GET` | `/l/:code` | Redirection publique mesurée (302, sans IP ni cookie) |
+| `GET` | `/api/commentaires?statut=` · `POST /api/commentaires/:id/repondre` | Commentaires reçus et réponses |
 | `GET` | `/api/statistiques?periode=jour\|semaine\|mois` | Indicateurs, séries, pays, top |
 | `GET` | `/api/rapports`, `/api/rapports/:id` | Rapports et contenu Markdown |
 | `POST` | `/api/rapports/generer` · `:id/envoyer` | Génération et transmission |
@@ -193,7 +197,38 @@ horaire, plafonds anti-spam. Le serveur ne fait jamais confiance à l’interfac
 
 ---
 
-## 5. Drive, visuels et rapports
+## 5. Drive, liens, commentaires et rapports
+
+### Google Drive comme source centrale
+
+Le Drive est la source des contenus, structuré par dossier : `Reels/`, `Stories/`,
+`UnePleine/`, `PhotoProfil/`, plus un dossier `Archive/`. La synchronisation est idempotente
+(identifiant de fichier mémorisé dans `contenu_drive.drive_file_id`) et limitée à 200 Mo par
+fichier. Après une publication **confirmée**, le fichier est **déplacé** vers `Archive/`
+(`files.update` avec `addParents` / `removeParents`) — il n'est jamais supprimé. En cas
+d'échec, il reste dans son dossier d'origine pour être réessayé.
+
+Variables : `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` et les
+identifiants de dossiers. Sans configuration, le Drive local `data/drive/` prend le relais.
+
+### Lien de suivi et clics
+
+Instagram ne transmet pas les clics de la bio. Chaque lien créé reçoit un code court
+(`/l/abc2345`) qui enregistre le clic (jour, pays, référent tronqué) puis redirige en `302`.
+Aucune adresse IP, aucun cookie, aucun identifiant n'est conservé. Les clics alimentent le
+tableau de bord, l'écran **Lien & commentaires**, les statistiques et les rapports.
+
+### Réponses aux commentaires reçus
+
+C'est la priorité du cahier des charges et la seule interaction sortante que l'API Graph
+autorise réellement (`instagram_manage_comments`). Le moteur lit les commentaires des médias
+publiés, déduplique par identifiant, choisit une réponse **écrite à l'avance** selon la langue
+(FR/EN) et l'intention (question, remerciement, compliment, neutre), puis publie la réponse.
+Un échec laisse le commentaire en `Echec` et lève une anomalie ; un commentaire sans réponse
+depuis plus de 24 h déclenche une notification. La banque de textes est personnalisable via
+`data/reponses.json` (même structure que `src/donnees/reponses.js`).
+
+### Visuels et rapports
 
 - Chaque publication possède un **visuel réel**, généré en SVG (1080 × 1920 pour Reels/Stories,
   1080 × 1350 pour les Unes, 420 × 420 pour le profil) : dégradés, carte de points clés,
@@ -226,9 +261,21 @@ Le mode `graph` publie réellement via l’API Instagram Graph (`INSTAGRAM_MODE=
 `IG_USER_ID`, `IG_ACCESS_TOKEN`, médias servis en HTTPS via `URL_PUBLIQUE`). Il nécessite un
 compte professionnel et une application Meta validée.
 
+| Capacité | API officielle | Dans Insta-VA |
+|---|---|---|
+| Publier photo / story / reel / carrousel | ✅ | exécuté |
+| Lire les insights d’un média | ✅ | exécuté |
+| Lire et **répondre** aux commentaires | ✅ | exécuté (priorité) |
+| Liker, s’abonner, visionner | ❌ | **jamais automatisé** (tracé seulement) |
+| Messages privés | ❌ | hors périmètre |
+| Clics sur le lien de la bio | ⚠️ indirect | redirection mesurée `/l/:code` |
+
+Le détail (modules, tables, machine à états, reprise après arrêt, décisions ouvertes) est dans
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 > ⚠️ **Limites de l’API officielle** : Instagram ne fournit pas d’endpoint public pour liker,
-> commenter ou s’abonner automatiquement. Ces actions restent donc simulées et tracées, même en
-> mode `graph`. Le bot **n’utilise aucun contournement** de l’API (pas de mot de passe, pas
+> s’abonner ou visionner automatiquement. Ces actions ne sont **pas** exécutées (elles restent
+> tracées dans le modèle). Seule la **réponse aux commentaires reçus** est réellement publiée. Le bot **n’utilise aucun contournement** de l’API (pas de mot de passe, pas
 > d’automatisation de l’application mobile) : cela protège le compte et respecte les conditions
 > d’utilisation. Les statistiques proviennent de l’API quand elle est disponible, sinon du moteur.
 
@@ -248,10 +295,14 @@ src/
 │   ├── moteur.js            # horloge, plan de journée, exécution, cycle 30 jours
 │   ├── compte.js · agent.js · audience.js · cibles.js
 │   ├── drive.js · visuels.js · publications.js · interactions.js
+│   ├── commentaires.js · liens.js
 │   ├── statistiques.js · rapports.js · veille.js
 │   ├── journal.js · anomalies.js · chiffrement.js
 ├── donnees/                 # personas, concepts éditoriaux, commentaires, diagramme
-├── services/instagram.js    # passerelle simulation / Graph
+├── services/
+│   ├── instagram.js         # passerelle simulation / Graph
+│   ├── commentaires.js      # Graph : lecture / réponse aux commentaires
+│   └── drive-google.js      # Drive v3 : liste, téléchargement, archivage (OAuth 2.0)
 └── utils/                   # temps, aléa déterministe, texte, HTTP
 public/
 ├── index.html · styles.css · app.js   # shell, routeur, SSE

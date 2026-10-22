@@ -12,7 +12,8 @@ export default {
   async rendre(ctx) {
     const periode = ctx.params.periode || 'mois';
     const donnees = await ctx.api(`/api/statistiques?periode=${periode}`);
-    const { agregat, serie, pays, top, kpis, courbe: abonnes } = donnees;
+    const { agregat, serie, pays, top, kpis, courbe: abonnes, liens } = donnees;
+    const clicsPeriode = liens?.total ?? 0;
     const points = serie.map((l) => ({ label: l.date, valeur: l.portee }));
     const pointsLikes = serie.map((l) => ({ label: l.date, valeur: l.likes }));
     const variations = serie.map((l) => ({ label: l.date, valeur: l.abonnesGagnes }));
@@ -49,6 +50,26 @@ export default {
       ${kpi('Engagement', pc(agregat.engagement), `cible ${kpis.cibleEngagement} %`, { progression: Math.min(100, (agregat.engagement / kpis.cibleEngagement) * 100), couleur: agregat.engagement >= kpis.cibleEngagement ? 'mint' : 'ambre' })}
       ${kpi('Abonnés gagnés', `+${nf(agregat.abonnesGagnes)}`, `${nf(kpis.abonnes)} au total`, { progression: kpis.progressionAbonnes, couleur: 'mint' })}
       ${kpi('Interactions', nf(agregat.interactions), `${nf(agregat.publications)} publication(s)`)}
+    </div>
+
+    <div class="grille g2 mt-16">
+      ${carte(
+        `<div class="flex" style="align-items:baseline;gap:10px">
+          <span style="font-size:30px;font-weight:600;letter-spacing:-.02em">${nf(clicsPeriode)}</span>
+          <span class="small muet">clic(s) sur le lien · ${PERIODES.find((p) => p.valeur === periode)?.libelle || ''}</span>
+        </div>
+        <div class="tiny muet mt-12">Clics réels sur l’adresse courte <span class="mono">/l/…</span> placée en bio : c’est le seul trafic mesurable en dehors d’Instagram. Ni adresse IP ni identifiant ne sont enregistrés.</div>`,
+        { titre: 'Trafic externe', sous: 'clics sur le lien', actions: '<a class="btn btn-petit btn-fantome" href="#/liens">Gérer les liens</a>' },
+      )}
+      ${carte(
+        (liens?.parLien || []).length
+          ? (liens.parLien.slice(0, 6)).map(
+              (l) => `<div class="flex tiny" style="justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--trait)">
+                <span class="mono">/l/${echapper(l.code)}</span><span>${nf(l.clics)}</span></div>`,
+            ).join('')
+          : vide('Aucun clic', 'Créez un lien de suivi pour mesurer ce trafic.'),
+        { titre: 'Par lien', sous: 'période affichée' },
+      )}
     </div>
 
     <div class="grille g-2-1 mt-16">
